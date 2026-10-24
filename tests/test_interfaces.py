@@ -103,7 +103,7 @@ class InterfaceTests(unittest.TestCase):
             self.assertEqual([n for n in names if n.endswith('/SKILL.md')], ['tidvo/SKILL.md'])
             tar.extractall(extract, filter='data')
         skill = extract / "tidvo"
-        for name in ["SKILL.md", "README.zh-CN.md", "INSTALL.md", "LICENSE", "UPSTREAM.md", "macdev/engine.py", "macdev/occupancy.py", "macdev/agent_catalog.py", "macdev/agent_inspection.py", "references/agent-adapters.md", "scripts/tidvo.py", "scripts/mac_cleanup.py", "scripts/mole_bridge.sh", "vendor/mole/lib/core/file_ops.sh", "tests/test_product.py", "tests/test_agents.py", "tests/test_occupancy.py"]:
+        for name in ["SKILL.md", "README.zh-CN.md", "INSTALL.md", "LICENSE", "UPSTREAM.md", "macdev/engine.py", "macdev/occupancy.py", "macdev/app_installation.py", "macdev/agent_catalog.py", "macdev/agent_inspection.py", "references/agent-adapters.md", "references/uninstalled-apps.md", "scripts/tidvo.py", "scripts/mac_cleanup.py", "scripts/mole_bridge.sh", "vendor/mole/lib/core/file_ops.sh", "tests/test_product.py", "tests/test_agents.py", "tests/test_occupancy.py", "tests/test_uninstalled.py"]:
             self.assertTrue((skill / name).is_file(), name)
         r = subprocess.run([sys.executable, str(skill / "scripts/tidvo.py"), "--version"],
                            env=self.env, capture_output=True, text=True, timeout=10)

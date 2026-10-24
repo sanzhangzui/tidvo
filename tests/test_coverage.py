@@ -32,6 +32,9 @@ class FixtureProbe(NativeProbe):
     def owner_cache_paths(self):
         return []
 
+    def installation(self, owner, *, refresh=False):
+        return {"status": "unknown", "reason": "fixture_has_no_install_inventory"}
+
     def idle(self, path, *, rule_id=None):
         return "idle"
 

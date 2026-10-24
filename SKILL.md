@@ -41,6 +41,14 @@ unreviewed move. Default cache recommendations exclude ambiguous build/delivery
 outputs, installed tools, rollback versions and offline-resource stores; review
 those separately when needed. Act only within backend eligibility and scope.
 
+Before recommending application cleanup, use `app_inventory` and each candidate's
+`installation` alongside process evidence. An idle process does not establish
+uninstallation. For confirmed uninstalled apps, cleanup authorization for their
+residuals includes the app's exclusive settings/history/private databases; do not
+ask again for each file or recommend reopening the removed app. Use the scoped
+uninstall workflow in [application residuals](references/uninstalled-apps.md).
+Shared resources, project files and external references remain separate.
+
 Lead the result with disk used/free capacity, the most useful recommended batch,
 its impact and meaningful retained groups. Agent details support that decision;
 they are not the main report unless requested. Disk capacity describes the
@@ -142,6 +150,8 @@ with raw JSON, an opaque ID, a successful exit code, or only "done".
   full `mo clean`, permanent-delete fallback, or owner prune command execution.
 - Preserve credentials, source, Git history, application data, databases,
   editor local history and active runtimes. Report ambiguous cases.
+  The separately authorized exclusive residuals of a confirmed uninstalled app
+  may include its private databases under the narrow uninstall rule above.
 - Project `node_modules`, `.venv` and `venv` are development environments, not
   disposable download caches. Keep them report-only even when idle and rebuildable.
   A claim that they can be reinstalled is not a reason to recommend removing them.

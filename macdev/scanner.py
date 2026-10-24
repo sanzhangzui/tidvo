@@ -11,6 +11,7 @@ from pathlib import Path
 
 from .cache_context import cache_index
 from .agent_inspection import AgentPolicy
+from .app_installation import PROFILES, RESIDUAL_RULE, residual_paths, residual_context, only_database_sensitivity
 from .probes import NativeProbe, git_evidence
 from .safety import Refused, canonical_json, deduplicate, ordinary_path, tree_snapshot
 
@@ -33,12 +34,17 @@ def read_json(path):
 
 
 class Scanner:
-    def __init__(self, home=None, roots=None, excludes=(), probe=None, budget=120):
+    def __init__(self, home=None, roots=None, excludes=(), probe=None, budget=120, uninstalled_apps=()):
         self.started = time.monotonic()
         self.home = Path(home or Path.home()).resolve()
         self.roots = [Path(x).expanduser().absolute() for x in (roots or [])]
         self.excludes = [Path(x).expanduser().absolute() for x in excludes]
         self.probe = probe or NativeProbe(self.home)
+        self.uninstalled_apps = sorted(set(uninstalled_apps))
+        if any(x not in PROFILES for x in self.uninstalled_apps):
+            raise Refused("unrecognized_uninstalled_application")
+        self.app_inventory = {}
+        self.app_residuals = []
         self.deadline = time.monotonic() + budget
         self.items = []
         self.issues = []
@@ -68,7 +74,7 @@ class Scanner:
     def excluded(self, p):
         return any(p == x or p.is_relative_to(x) for x in self.excludes)
 
-    def add(self, p, rule, group, *, owner="", packages=(), notes=(), report_only=False, project=False, package_details=(), cache_context=None):
+    def add(self, p, rule, group, *, owner="", packages=(), notes=(), report_only=False, project=False, package_details=(), cache_context=None, residual=None):
         if not p.exists() or self.excluded(p):
             return
         item = {"id": hashlib.sha256(canonical_json([rule, str(p)])).hexdigest()[:24], "path": str(p),
@@ -77,6 +83,13 @@ class Scanner:
                 "evidence": list(notes), "scan_status": "complete", "action": "trash", "recommendation": "review"}
         if cache_context:
             item["cache_context"] = cache_context
+        if owner:
+            if owner not in self.app_inventory:
+                inspect = getattr(self.probe, "installation", None)
+                self.app_inventory[owner] = inspect(owner) if inspect else {"status": "unknown", "reason": "installation_probe_unavailable"}
+            item["installation"] = self.app_inventory[owner]
+        if residual:
+            item["residual_context"] = residual
         protection = self.agent_policy.protection_for(p, rule, cache_context)
         if protection:
             report_only = True
@@ -92,12 +105,15 @@ class Scanner:
                 if item["git_status"] in ["tracked", "unknown"]:
                     report_only = True
                     item["evidence"].append("git_tracked_or_index_unavailable")
-            if item["snapshot"]["sensitive"]:
+            if item["snapshot"]["sensitive"] and not (rule == RESIDUAL_RULE and residual and only_database_sensitivity(item["snapshot"])):
                 report_only = True
                 item["evidence"].append("nested_repository_or_sensitive_file")
             if item["activity"]["activity"] != "idle" or item["activity"]["configured_reference"]:
                 report_only = True
             if packages and item["activity"]["reference_scan_status"] != "complete":
+                report_only = True
+            if rule == RESIDUAL_RULE and (item["installation"]["status"] != "not_found" or not residual["user_confirmed_uninstalled"]
+                                          or item["activity"]["reference_scan_status"] != "complete"):
                 report_only = True
             if report_only:
                 item["action"] = "report_only"
@@ -339,8 +355,29 @@ class Scanner:
             for p in self.children(self.home / relative):
                 self.add(p, "app.user_temporary", "app_caches", owner=owner, notes=["specific_user_cache_or_temporary_child"])
 
+    def uninstalled_residuals(self):
+        for owner in PROFILES:
+            paths = [p for p in residual_paths(self.home, owner) if p.exists() or p.is_symlink()]
+            if not paths:
+                continue
+            inspect = getattr(self.probe, "installation", None)
+            evidence = inspect(owner) if inspect else {"status": "unknown", "reason": "installation_probe_unavailable"}
+            self.app_inventory[owner] = evidence
+            asserted = owner in self.uninstalled_apps
+            if evidence["status"] == "installed" or not asserted and evidence["status"] != "not_found":
+                continue
+            for p in paths:
+                self.add(p, RESIDUAL_RULE, "uninstalled_apps", owner=owner,
+                         notes=["exclusive_application_residual", "includes_app_history_sessions_and_private_databases",
+                                "user_confirmed_uninstalled" if asserted else "uninstall_not_confirmed"],
+                         residual=residual_context(owner, asserted), report_only=not asserted)
+                if not asserted and self.items and self.items[-1]["path"] == str(p):
+                    # An unconfirmed parent is inventory only. It must not hide
+                    # independently eligible ordinary cache leaves in dedup.
+                    self.app_residuals.append(self.items.pop())
+
     def scan(self, *, audit_agents=True):
-        for function in [self.projects, self.developer, self.applications]:
+        for function in [self.projects, self.developer, self.uninstalled_residuals, self.applications]:
             try:
                 function()
             except (OSError, Refused) as exc:
@@ -363,6 +400,8 @@ class Scanner:
         result = {"schema_version": 1, "home": str(self.home), "roots": [str(x) for x in self.roots],
                 "scan_duration_seconds": round(time.monotonic() - self.started, 3),
                 "excludes": [str(x) for x in self.excludes], "scan_status": "partial" if self.issues else "complete",
+                "uninstalled_apps": self.uninstalled_apps, "app_inventory": self.app_inventory,
+                "uninstalled_residual_inventory": self.app_residuals,
                 "issues": self.issues, "disk_usage": capacity, "projects": sorted(set(self.project_roots)), "candidates": items,
                 "candidate_allocated_bytes": sum(x.get("allocated_bytes") or 0 for x in items),
                 "actionable_allocated_bytes": sum(x.get("allocated_bytes") or 0 for x in items if x["action"] == "trash"),

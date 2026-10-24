@@ -5,6 +5,7 @@ import re
 import stat
 import tempfile
 from pathlib import Path
+from .app_installation import RESIDUAL_RULE
 
 # Only these reviewed, regenerable cache rules may use current-user evidence.
 # Logs, offline site stores, installed tools and build/delivery outputs stay strict.
@@ -108,9 +109,9 @@ def check_occupancy(path, home, command, rule_id=None):
     complete = root is not None and root.returncode == 0 and not root.stderr.strip() and {"p1", "u0"}.issubset(root.stdout.splitlines())
     if complete:
         evidence.update(scope="root_visible_probe", reason="root_process_visible")
-    elif platform.system() == "Darwin" and rule_id in USER_CACHE_RULES and cache_target(path, home):
+    elif platform.system() == "Darwin" and (rule_id in USER_CACHE_RULES or rule_id == RESIDUAL_RULE) and cache_target(path, home):
         valid, reason, count = user_visibility(command)
-        evidence.update(scope="current_user_cache", uid=os.getuid(), reason=reason,
+        evidence.update(scope="current_user_uninstalled_residual" if rule_id == RESIDUAL_RULE else "current_user_cache", uid=os.getuid(), reason=reason,
                         observed_user_processes=count, other_users_certified=False)
         if not valid:
             return evidence

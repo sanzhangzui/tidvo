@@ -101,8 +101,18 @@ unproven browser runtime versions are report-only. They are not trashable throug
 Project `node_modules`, `.venv` and `venv` are always report-only: they are needed
 for development even if a process is not using them at scan time. A rebuild
 manifest does not change that policy. Download caches are separate candidates.
-There is no dependency-removal override in this interface. Policy version 0.2.2
+There is no dependency-removal override in this interface. Policy version 0.2.3
 rejects earlier-version plans; rescan and review a fresh plan.
+
+Since 0.2.3, `scan` reports application installation separately from process
+activity. `scan --uninstalled-app Dia` acknowledges prior user confirmation of
+uninstallation and authorization to remove that app's exclusive residuals,
+including its private history/settings/databases. This is not a generic path
+override; installed/unknown/active/referenced apps stay retained. A scoped negative
+search by itself is not proof of uninstall. Unconfirmed possible residuals appear
+in `uninstalled_residual_inventory` without enabling plans and may overlap ordinary
+cache candidates; do not sum their sizes. See [uninstalled-apps.md](uninstalled-apps.md)
+for exact adapters, authorization, immediate rechecks and recovery limits.
 
 ## Agent inventory and protection (0.2.0)
 

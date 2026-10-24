@@ -28,6 +28,17 @@ def command(*args):
 def reasons(item):
     notes = item.get("evidence", [])
     values = []
+    installation = item.get("installation", {})
+    if installation.get("status") == "installed":
+        values.append("应用仍安装")
+    elif installation.get("status") == "not_found":
+        values.append("标准安装目录及 Spotlight 未发现应用")
+    elif installation:
+        values.append("安装状态未能确认")
+    if "exclusive_application_residual" in notes:
+        values.append("应用专属卸载残留，包含设置、历史及私有数据库")
+    if "uninstall_not_confirmed" in notes:
+        values.append("未获得已卸载的确认，暂不移除应用数据")
     if "project_dependency_environment_preserved" in notes:
         values.append("项目依赖/虚拟环境，保留开发环境")
     if "git_tracked_or_index_unavailable" in notes:
@@ -118,6 +129,12 @@ def render(kind, result, *, report_path=None):
                  "检查范围：已知缓存和开发产物；候选清单不代表全盘占用分布。",
                  "项目依赖 node_modules、.venv、venv 默认保留。", ""]
         lines += candidates(result["candidates"])
+        residuals = result.get("uninstalled_residual_inventory", [])
+        if residuals:
+            lines += ["", "可能的卸载残留（与缓存候选可能重叠，容量不可相加；尚未执行）："]
+            for item in residuals:
+                lines.append(f"{safe(item['owner'])}  {size(item.get('allocated_bytes'))}  {safe(item['path'])}")
+            lines.append("下一步：结合已卸载的应用确认残留清理范围；已授权的范围无需重复确认。")
         for issue in result["issues"]:
             lines.append(f"检查问题：{safe(issue['path'])} — {safe(issue['reason'])}")
         lines += ["", "本次只扫描，没有清理文件。待选择项目也不代表已获准清理。"]

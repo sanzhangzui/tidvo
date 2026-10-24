@@ -13,6 +13,7 @@ from pathlib import Path
 
 from .probes import NativeProbe
 from .cache_context import unchanged_cache_context
+from .app_installation import RESIDUAL_RULE, validate_residual
 from .agent_inspection import AgentPolicy
 from .probes import git_evidence
 from . import __version__
@@ -91,7 +92,8 @@ def make_plan(report, selected, state, *, probe=None, scanner_factory=Scanner):
     if report.get("schema_version") != 1 or report.get("home") != str(state.home):
         raise Refused("scan_schema_or_home_mismatch")
     # Reports are untrusted input: recompute rules and evidence, not commands from JSON.
-    fresh = scanner_factory(home=state.home, roots=report["roots"], excludes=report["excludes"], probe=probe).scan()
+    extra = {"uninstalled_apps": report["uninstalled_apps"]} if report.get("uninstalled_apps") else {}
+    fresh = scanner_factory(home=state.home, roots=report["roots"], excludes=report["excludes"], probe=probe, **extra).scan()
     before = {x["id"]: x for x in report["candidates"]}
     current = {x["id"]: x for x in fresh["candidates"]}
     candidates = []
@@ -99,11 +101,14 @@ def make_plan(report, selected, state, *, probe=None, scanner_factory=Scanner):
         if identifier not in before or identifier not in current:
             raise Refused("candidate_missing_rescan_required")
         old, item = before[identifier], current[identifier]
-        if item["action"] != "trash" or old.get("snapshot") != item.get("snapshot") or old.get("cache_context") != item.get("cache_context"):
+        if (item["action"] != "trash" or old.get("snapshot") != item.get("snapshot")
+                or old.get("cache_context") != item.get("cache_context")
+                or old.get("residual_context") != item.get("residual_context")):
             raise Refused("candidate_changed_or_report_only")
         candidates.append(item)
     plan = {"schema_version": 1, "policy_version": __version__, "id": uuid.uuid4().hex, "home": str(state.home), "created_at": now(),
-            "mode": "trash", "roots": report["roots"], "projects": fresh["projects"], "excludes": report["excludes"], "candidates": candidates,
+            "mode": "trash", "roots": report["roots"], "projects": fresh["projects"], "excludes": report["excludes"],
+            "uninstalled_apps": fresh.get("uninstalled_apps", []), "candidates": candidates,
             "selected_allocated_bytes": sum(x["allocated_bytes"] for x in candidates),
             "confirmation_note": "Review these exact candidates before apply --confirmed; the flag is an acknowledgement, not proof of human consent."}
     state.write("plans", plan)
@@ -146,8 +151,9 @@ def prepare_trash(home):
     return p
 
 
-def current_policy(candidate, state, projects=()):
+def current_policy(candidate, state, projects=(), probe=None):
     p = Path(candidate["path"])
+    installation = None
     policy = AgentPolicy(state.home)
     for project in projects:
         policy.inspect_project(Path(project))
@@ -156,6 +162,14 @@ def current_policy(candidate, state, projects=()):
         raise Refused(protection["reason"])
     if candidate["rule_id"] in DEPENDENCY_RULES:
         raise Refused("project_dependency_environment_preserved")
+    if candidate["rule_id"] == RESIDUAL_RULE:
+        if probe is None:
+            raise Refused("installation_probe_missing")
+        installation = validate_residual(candidate, state.home, probe)
+        probe.refresh()
+        ev = probe.evidence(p, candidate["owner"])
+        if ev["activity"] != "idle" or ev["configured_reference"] or ev["reference_scan_status"] != "complete":
+            raise Refused("uninstalled_application_active_referenced_or_unknown")
     config = state.home / ".config/mac-dev-cleanup/config.json"
     if config.exists():
         if config.resolve() != config:
@@ -171,6 +185,7 @@ def current_policy(candidate, state, projects=()):
         current = {x.get("relativeLocation") for x in read_json(base / "extensions.json")}
         if read_json(base / ".obsolete").get(p.name) is not True or p.name in current:
             raise Refused("extension_no_longer_obsolete")
+    return installation
 
 
 def apply(plan_id, state, *, confirmed=False, probe=None, backend=None):
@@ -199,11 +214,14 @@ def apply(plan_id, state, *, confirmed=False, probe=None, backend=None):
                 dest = trash / ("mac-dev-cleanup-" + run["id"] + "-" + candidate["id"])
                 entry = {"candidate_id": candidate["id"], "group": candidate["group"], "rule_id": candidate["rule_id"],
                          "source": str(p), "destination": str(dest), "snapshot": candidate["snapshot"], "status": "checking"}
+                if candidate.get("residual_context"):
+                    entry["residual_context"] = candidate["residual_context"]
+                    entry["installation"] = candidate.get("installation")
                 run["entries"].append(entry)
                 state.write("runs", run)
                 try:
                     ordinary_path(p, state.home)
-                    current_policy(candidate, state, plan.get("projects", []))
+                    current_policy(candidate, state, plan.get("projects", []), probe)
                     with version_lock(candidate):
                         unchanged(p, candidate["snapshot"])
                         probe.refresh()
@@ -223,7 +241,10 @@ def apply(plan_id, state, *, confirmed=False, probe=None, backend=None):
                         if dest.exists() or dest.is_symlink():
                             raise Refused("trash_destination_conflict")
                         unchanged_cache_context(candidate)
-                        current_policy(candidate, state, plan.get("projects", []))
+                        installation = current_policy(candidate, state, plan.get("projects", []), probe)
+                        if installation:
+                            entry["installation"] = installation
+                            unchanged(p, candidate["snapshot"])
                         entry["status"] = "moving"
                         state.write("runs", run)  # durable intent before filesystem mutation
                         backend.move(p, dest, candidate["snapshot"])

@@ -35,6 +35,15 @@ missing fact changes the decision, ask one targeted question while completing
 independent analysis; otherwise retain the item and explain the uncertainty.
 Current-run choices remain current-run choices unless persistence is requested.
 
+Check application installation before recommendations. `installed`, `not_found`
+in the stated search scope, and `unknown` are different from process activity.
+Use the user's explicit uninstall statement together with the bounded app-folder
+and Bundle ID search. Renamed, nested or portable installed copies prevent
+residual removal; incomplete searches do not establish uninstallation. Once
+the user authorizes confirmed-uninstalled residual cleanup, apply the exact
+exclusive-path batch without asking separately about every internal database.
+Explain that app settings/history/sessions are included. Read uninstalled-apps.md.
+
 ## Recommend useful scope
 
 | Group | Default recommendation and impact to explain |
@@ -42,6 +51,7 @@ Current-run choices remain current-run choices unless persistence is requested.
 | Project dependencies (`node_modules`, `.venv`, `venv`) | Retain; needed for development even while idle. The script makes these report-only. |
 | Agent sessions, memory, configuration, databases, workspaces, Skills/plugins/models | Retain. `agent_audit` and `agents` are inventories without cleanup authority. Separate occupied capacity from removable candidates; explain incomplete/heuristic coverage. |
 | Known application and download caches | Consider within requested scope when ownership and activity are verified. Explain cache regeneration, downloads, and an initially slower launch. |
+| Confirmed uninstalled app residuals | With residual cleanup authorized, include exact app-exclusive settings, history and private databases; do not recommend launching/reinstalling the removed app. Recheck installation before planning and before each move. Keep unknown/shared/external or Agent-protected resources. |
 | VS Code logs and compiled caches | Separate loss of historical diagnostics from regenerated compiled resources. Preserve User/History, globalStorage and workspace state. |
 | VS Code Webview, Dia and Feishu/Lark site caches | Explain possible loss of offline resources and re-downloads; retain while the owning application is active. Unknown browser/messaging origins stay report-only. |
 | npm prebuild archives | These are native-module download packages, not installed dependencies. Explain that a later install/rebuild may need another download. |
@@ -75,7 +85,7 @@ empty categories. The following information is useful for each operation:
 | Scan | Actual coverage, completeness, largest relevant groups, recommended vs retained scope; no cleanup occurred | Present a concrete batch matching the request, or resolve a material ambiguity. If nothing is suitable, say no cleanup is recommended. |
 | Agent check | Tools/data actually observed, purpose and protected state, shared paths, metadata-size lower bounds and coverage gaps; no cleanup occurred | Verify an uncertain local data root or request it explicitly; review existing ordinary cache candidates separately. Do not recommend deleting sessions/memory just because they are large. |
 | Plan | Exact selected scope, estimated capacity and consequences; no cleanup occurred | Obtain one confirmation for this batch, unless already authorized for the same reviewed scope. |
-| Cleanup | Receipt-backed moved/skipped/recovery-required counts and meaningful groups; unprocessed items; moved capacity and separately observed free-space change | After success, suggest normal use of affected apps. For a blocked group, name the missing precondition; for interruption, inspect the receipt before another action. |
+| Cleanup | Receipt-backed moved/skipped/recovery-required counts and meaningful groups; unprocessed items; moved capacity and separately observed free-space change | For installed apps, suggest normal use; for uninstalled residuals, report completion and keep recovery records without asking to open/reinstall the app. For blocked groups, name the missing precondition; after interruption, inspect receipts. |
 | Restore | Which recorded payloads were restored, which were not, and conflict/missing-payload reasons | Resume normal use after success, or review the specific source/Trash locations without overwriting conflicts. |
 | History | Relevant operations and statuses; identify unresolved entries without treating old moved totals as current disk savings | Offer recovery only when relevant; otherwise state that no action is required. |
 | Refusal/error | What completed, what did not, whether any mutation may have occurred, and where its receipt is | Give the specific remedy supported by evidence. Do not blindly retry mutations or work around safeguards. |

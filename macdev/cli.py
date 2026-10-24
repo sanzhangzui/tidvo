@@ -9,6 +9,7 @@ from . import __version__
 from .engine import apply, make_plan, restore
 from .display import render
 from .agent_catalog import catalog_report
+from .app_installation import PROFILES
 from .safety import Refused
 from .scanner import Scanner
 from .state import State
@@ -24,6 +25,8 @@ def parser():
     s.add_argument("--budget", type=int, default=120)
     s.add_argument("--json", action="store_true", help="Machine-readable JSON instead of the terminal summary")
     s.add_argument("--output", type=Path)
+    s.add_argument("--uninstalled-app", action="append", default=[], choices=sorted(PROFILES),
+                   help="Acknowledge the user confirmed this app was uninstalled and its exclusive residual data may be removed; still requires a reviewed signed plan")
     s = commands.add_parser("agents", help="Metadata-only Agent inventory and protection; never creates cleanup candidates")
     s.add_argument("--root", action="append", default=[])
     s.add_argument("--exclude", action="append", default=[])
@@ -67,7 +70,8 @@ def main(argv=None):
                 result = catalog_report()
             else:
                 scanner = Scanner(home=home, roots=args.root or config.get("roots", []),
-                                  excludes=config.get("excludes", []) + args.exclude, budget=args.budget)
+                                  excludes=config.get("excludes", []) + args.exclude, budget=args.budget,
+                                  uninstalled_apps=getattr(args, "uninstalled_app", []))
                 if args.command == "scan":
                     result = scanner.scan()
                 else:

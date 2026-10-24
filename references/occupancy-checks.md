@@ -38,6 +38,12 @@ Logs, installed tools, rollback versions, build/delivery outputs, offline site
 stores, databases and unspecified rules do not receive this mode. Non-macOS and
 root callers cannot use it. The original stricter probe remains for other rules.
 
+Version 0.2.3 adds a separate `current_user_uninstalled_residual` scope for the
+explicit, exact-path uninstall rule described in uninstalled-apps.md. Only that
+rule may include private app databases/offline state under existing uninstall
+authorization; it validates absence and exclusive ownership before and after
+occupancy. This does not broaden cache rules or permit generic database cleanup.
+
 ## Receipts and limits
 
 Apply entries and restore results record `occupancy`: status, scope and reason.

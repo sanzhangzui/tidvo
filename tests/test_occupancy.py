@@ -151,6 +151,12 @@ class OccupancyTests(unittest.TestCase):
         self.assertEqual(evidence["scope"], "root_visible_probe")
         self.assertEqual(len(self.calls), 2)
 
+    def test_uninstalled_residual_uses_its_own_observation_scope(self):
+        evidence = self.check("app.uninstalled_residual")
+        self.assertEqual(evidence["status"], "idle")
+        self.assertEqual(evidence["scope"], "current_user_uninstalled_residual")
+        self.assertFalse(evidence["other_users_certified"])
+
     def test_receipts_record_scope_and_restore_uses_same_cache_contract(self):
         class Probe(NativeProbe):
             def owner_cache_paths(inner): return []

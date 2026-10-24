@@ -7,6 +7,7 @@ from pathlib import Path
 from .agent_catalog import config_sources
 from .agent_inspection import read_config
 from .occupancy import check_occupancy
+from .app_installation import inspect_installation
 
 
 def command(args, timeout=10):
@@ -28,9 +29,11 @@ class NativeProbe:
         self.reference_status = "complete"
         self.config_paths = set()
         self.last_occupancy_evidence = {}
+        self.installations = {}
         self.refresh()
 
     def refresh(self):
+        self.installations = {}
         r = command(["/bin/ps", "-axo", "pid=,command="], 5)
         self.rows = r.stdout.splitlines() if r is not None and r.returncode == 0 and not r.stderr.strip() else None
         self.references = set()
@@ -99,6 +102,11 @@ class NativeProbe:
         return {"activity": activity, "matched_pids": pids, "configured_reference": referenced,
                 "reference_scan_status": self.reference_status,
                 "reference_note": "known configuration adapters only; no match does not prove future non-use"}
+
+    def installation(self, owner, *, refresh=False):
+        if refresh or owner not in self.installations:
+            self.installations[owner] = inspect_installation(owner, self.home, command)
+        return self.installations[owner]
 
     def idle(self, path, *, rule_id=None):
         self.last_occupancy_evidence = check_occupancy(path, self.home, command, rule_id)

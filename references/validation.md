@@ -1,4 +1,4 @@
-# Tidvo validation evidence — 0.2.2 beta
+# Tidvo validation evidence — 0.2.3 beta
 
 Local evidence recorded on 2026-10-24. Publication and GitHub CI results are
 separate from these local checks. This is not a claim of fewer false positives
@@ -8,7 +8,7 @@ or more reclaimed GB across real users.
 
 - Local host: macOS 26.4.1, Apple Silicon arm64.
 - Product suite: `python3 -m unittest discover -s tests -v`; Python 3.14.2 and
-  Python 3.11.12: **163 tests passed on each interpreter**, with one native
+  Python 3.11.12: **190 tests passed on each interpreter**, with one native
   process-visibility integration test skipped inside the sandbox. The separate
   17-test occupancy suite passed outside the sandbox without skips, including
   a held-open fixture refusal and actual pinned-backend Trash/restore roundtrip.
@@ -40,9 +40,9 @@ or more reclaimed GB across real users.
   changes after planning, including another project's new reference or a change
   during occupancy checks. Explicit roots/shared resources override the narrow
   worktree-cache exception. The pre-existing 100 tests still pass.
-- Bash syntax and skill frontmatter validation pass. The self-contained 0.2.2
+- Bash syntax and skill frontmatter validation pass. The self-contained 0.2.3
   archive includes the catalog, protection code, Agent tests and coverage guide;
-  the extracted package also passes the full 163-test suite (the same sandbox
+  the extracted package also passes the full 190-test suite (the same sandbox
   visibility skip applies). No personal scan
   report, user configuration or upstream skill entry point is packaged.
 - The Tidvo rename adds a fixture verifying that both the new and legacy Python
@@ -64,6 +64,16 @@ or more reclaimed GB across real users.
   estimates. Ordinary-language routing/default retention are skill instructions;
   these deterministic tests do not certify every host/model's conversational
   behavior. The short-request acceptance cases are documented in SKILL.md.
+- Version 0.2.3 adds 27 checks for installation-vs-activity evidence, exact
+  exclusive residual paths, renamed/nested/portable copies, broken metadata,
+  incomplete Spotlight results, explicit uninstall scope, retained shared/Agent
+  resources and references, database/WAL scope, deduplication without hiding
+  ordinary caches, forged plans and reinstallation/reference changes before
+  planning, before apply and during occupancy. The pinned backend moves and
+  restores private database fixtures in a temporary Home. Current-user uninstall
+  evidence uses a separate receipt scope; ordinary cache rules stay unchanged.
+  Four known app adapters are not universal uninstall detection, full-volume
+  search certification or installed-version validation of those apps.
 - The published 0.2.0 code passed six GitHub matrix tasks for macOS 14/15 and
   Ubuntu with Python 3.11/3.13, plus the upstream safety task:
   https://github.com/sanzhangzui/tidvo/actions/runs/40070978975.
