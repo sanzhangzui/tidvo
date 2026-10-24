@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -66,11 +67,11 @@ def benchmark():
         config.parent.mkdir()
         config.write_text(json.dumps({"mcpServers": {"fixture": {"command": "npx", "args": ["fixture-mcp"]}}}))
         before = tree_snapshot(projects)
-        report = Scanner(home=home, roots=[projects], probe=IdleFixtureProbe(home)).scan()
+        with patch.dict(os.environ, {"HOME": str(home), "PATH": os.environ.get("PATH", "/usr/bin:/bin")}, clear=True):
+            report = Scanner(home=home, roots=[projects], probe=IdleFixtureProbe(home)).scan()
         output = home / "mole-purge-discovery.txt"
         npm_output = home / "mole-npx-preview.txt"
-        env = {k: v for k, v in os.environ.items() if not k.startswith(("MOLE_", "MO_", "MACDEV_", "BASH_FUNC_")) and k not in ["BASH_ENV", "ENV", "CDPATH", "GIT_DIR", "GIT_WORK_TREE"]}
-        env.update(HOME=str(home), PATH="/usr/bin:/bin:/usr/sbin:/sbin", MOLE_TEST_NO_AUTH="1", MOLE_DRY_RUN="1", NO_COLOR="1", DRY_RUN="true")
+        env = dict(HOME=str(home), PATH="/usr/bin:/bin:/usr/sbin:/sbin", MOLE_TEST_NO_AUTH="1", MOLE_DRY_RUN="1", NO_COLOR="1", DRY_RUN="true")
         shell = 'set -euo pipefail; source "$1/bin/clean.sh"; source "$1/lib/clean/project.sh"; EXPORT_LIST_FILE="$4"; clean_dev_npm; scan_purge_targets "$2" "$3"'
         result = subprocess.run(["/bin/bash", "--noprofile", "--norc", "-c", shell, "fixture", str(ROOT / "vendor/mole"), str(projects), str(output), str(npm_output)],
                                 env=env, capture_output=True, text=True, timeout=90)

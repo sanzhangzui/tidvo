@@ -8,7 +8,7 @@ or more reclaimed GB across real users.
 
 - Local host: macOS 26.4.1, Apple Silicon arm64.
 - Product suite: `python3 -m unittest discover -s tests -v`; Python 3.14.2 and
-  Python 3.11.12: **142 tests passed on each interpreter**. Fixtures cover scan/plan/apply/restore, Git changes, configured
+  Python 3.11.12: **143 tests passed on each interpreter**. Fixtures cover scan/plan/apply/restore, Git changes, configured
   references, update locks, invalid plans, partial evidence, path replacement,
   interrupted moves, Trash failure, restore conflicts and packaging. A reference
   probe becoming incomplete after plan creation also prevents the npx move;
@@ -26,7 +26,7 @@ or more reclaimed GB across real users.
   data, exclusions, dependency pruning, directory/depth budgets and redirected or
   nonregular metadata. Seven new path families also complete actual pinned Bash
   Trash moves and conflict-safe restores in a synthetic Home.
-- Version 0.2.0 adds 41 Agent fixture checks: catalog capability/evidence scope;
+- Version 0.2.0 adds 42 Agent fixture checks: catalog capability/evidence scope;
   protection for every registered root and project marker; credentials, history,
   memory, SQLite/WAL/SHM/journal preservation; no persistent-body reads; custom
   roots and environment overrides; unknown markers/extensions; shared-link
@@ -38,12 +38,17 @@ or more reclaimed GB across real users.
   worktree-cache exception. The pre-existing 100 tests still pass.
 - Bash syntax and skill frontmatter validation pass. The self-contained 0.2.0
   archive includes the catalog, protection code, Agent tests and coverage guide;
-  the extracted package also passes the full 142-test suite. No personal scan
+  the extracted package also passes the full 143-test suite. No personal scan
   report, user configuration or upstream skill entry point is packaged.
 - The Tidvo rename adds a fixture verifying that both the new and legacy Python
   entry points read the same existing signed history without migrating state.
   The skill, archive and primary command use Tidvo; backend/config/state names
   remain compatible. Vendored source is unchanged by the rename.
+- Fixture processes isolate HOME and inherited Agent/XDG directory overrides.
+  The first Ubuntu CI attempt exposed host overrides leaking into simulated
+  homes and correctly triggering the production protection guard. Fixture
+  isolation was fixed; production still refuses overrides outside scoped Home.
+  The full local suite also passes with deliberately injected host overrides.
 - Unchanged pinned backend: the prior required core regression passed 289 cases for
   `file_ops_mole_delete`, `file_ops_size`, `file_ops_safe_remove_symlink`,
   `user_file_ops`, `core_safe_functions`, and `history`.

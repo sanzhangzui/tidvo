@@ -30,9 +30,6 @@ class AgentInventoryTests(unittest.TestCase):
 
     def setUp(self):
         coverage_fixtures.CoverageTests.setUp(self)
-        env = patch.dict(os.environ, {"HOME": str(self.home), "PATH": os.environ.get("PATH", "/usr/bin:/bin")}, clear=True)
-        env.start()
-        self.addCleanup(env.stop)
 
     def policy(self, **kwargs):
         return AgentPolicy(self.home, **kwargs)
@@ -210,6 +207,12 @@ class AgentInventoryTests(unittest.TestCase):
         policy = self.policy(environ={"CODEX_HOME": "https://user:secret@example.test"})
         self.assertTrue(policy.fail_closed)
         self.assertNotIn("secret", json.dumps(policy.issues))
+
+    def test_host_xdg_override_outside_scoped_home_still_blocks_cleanup(self):
+        policy = self.policy(environ={"XDG_CONFIG_HOME": str(self.home.parent / "host-config")})
+        self.assertTrue(policy.fail_closed)
+        self.assertEqual(policy.protection_for(self.home / "cache", "app.page_cache")["reason"],
+                         "agent_protection_configuration_incomplete")
 
     def test_unknown_marker_detection_is_labeled_and_preserved(self):
         root = self.home / ".future-agent"

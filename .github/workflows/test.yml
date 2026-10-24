@@ -5,6 +5,7 @@ permissions:
 jobs:
   fixtures:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-14, macos-15]
         python: ['3.11', '3.13']
@@ -14,6 +15,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
+      - name: Report test environment
+        run: python3 -c "import platform; print(platform.platform()); print(platform.machine()); print(platform.python_version())"
       - run: python3 -m unittest discover -s tests -v
       - run: bash -n scripts/mole_bridge.sh
       - if: runner.os == 'macOS'

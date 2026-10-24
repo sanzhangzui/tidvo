@@ -50,6 +50,9 @@ class CoverageTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.home = Path(self.temp.name).resolve() / "home"
         self.home.mkdir(mode=0o700)
+        environment = patch.dict(os.environ, {"HOME": str(self.home), "PATH": os.environ.get("PATH", "/usr/bin:/bin")}, clear=True)
+        environment.start()
+        self.addCleanup(environment.stop)
         self.support = self.home / "Library/Application Support"
         self.probe = FixtureProbe(self.home)
 

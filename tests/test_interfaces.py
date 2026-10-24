@@ -26,7 +26,7 @@ class InterfaceTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.home = Path(self.temp.name).resolve() / "home"
         self.home.mkdir(mode=0o700)
-        self.env = dict(os.environ, HOME=str(self.home), PATH="/usr/bin:/bin:/usr/sbin:/sbin", COREPACK_ENABLE_NETWORK="0")
+        self.env = {"HOME": str(self.home), "PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "COREPACK_ENABLE_NETWORK": "0"}
 
     def cli(self, *args):
         return subprocess.run([sys.executable, str(ROOT / "scripts/tidvo.py"), *args], env=self.env,
