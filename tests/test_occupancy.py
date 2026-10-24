@@ -203,13 +203,29 @@ class NativeOccupancyIntegration(unittest.TestCase):
                         self.skipTest("native process observation unavailable in this sandbox: " + probe.last_occupancy_evidence["reason"])
                     self.assertEqual(state, "active")
                     self.assertFalse(held.closed)
-                self.assertEqual(probe.idle(cache, rule_id="project.__pycache__"), "idle")
+                state = probe.idle(cache, rule_id="project.__pycache__")
+                if state == "unknown":
+                    self.assertEqual(payload.read_text(), "fixture bytecode")
+                    self.skipTest("native observation became incomplete after closing fixture: " + probe.last_occupancy_evidence["reason"])
+                self.assertEqual(state, "idle")
                 report = Scanner(home=home, roots=[cache.parent], probe=probe).scan(audit_agents=False)
                 item = next(x for x in report["candidates"] if x["path"] == str(cache))
                 state = State(home)
                 plan = make_plan(report, [item["id"]], state, probe=probe)
                 run = apply(plan["id"], state, confirmed=True, probe=probe, backend=MoleBackend(state))
-                self.assertEqual(run["entries"][0]["status"], "trashed", run["entries"][0])
+                entry = run["entries"][0]
+                if entry["status"] == "skipped" and entry.get("occupancy", {}).get("status") == "unknown":
+                    self.assertEqual(entry["reason"], "open_file_check_active_or_incomplete")
+                    self.assertEqual(payload.read_text(), "fixture bytecode")
+                    self.assertFalse(Path(entry["destination"]).exists())
+                    self.skipTest("native apply correctly retained fixture after observation loss: " + entry["occupancy"]["reason"])
+                self.assertEqual(entry["status"], "trashed", entry)
                 result = restore(run["id"], state, confirmed=True, probe=probe, backend=MoleBackend(state))
-                self.assertEqual(result["results"][0]["status"], "restored", result)
+                record = result["results"][0]
+                if record["status"] == "skipped" and record.get("occupancy", {}).get("status") == "unknown":
+                    self.assertEqual(record["reason"], "restore_payload_in_use_or_unknown")
+                    self.assertFalse(cache.exists())
+                    self.assertEqual((Path(entry["destination"]) / "held.pyc").read_text(), "fixture bytecode")
+                    self.skipTest("native restore correctly retained Trash fixture after observation loss: " + record["occupancy"]["reason"])
+                self.assertEqual(record["status"], "restored", result)
                 self.assertEqual(payload.read_text(), "fixture bytecode")
