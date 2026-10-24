@@ -1,0 +1,9 @@
+# Mole project shellcheck configuration
+
+disable=SC2155  # Declare and assign separately
+# SC2034 stays off: ShellCheck reads one file at a time, so the constants and
+# globals that lib/core defines for every other module read as unused (80 of
+# the 94 hits). The genuinely dead ones were removed when this was measured.
+disable=SC2034  # Unused variables
+disable=SC1091  # Not following sourced files
+disable=SC2038  # Use find -print0 | xargs -0 pattern

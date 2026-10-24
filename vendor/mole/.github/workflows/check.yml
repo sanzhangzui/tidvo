@@ -1,0 +1,118 @@
+name: Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format:
+    name: Format
+    runs-on: macos-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Cache Homebrew
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          # Cache only the bottle download cache. Homebrew is under
+          # /opt/homebrew on the arm64 runners, and this repo has no Brewfile,
+          # so the old fixed key and /usr/local/Cellar paths restored nothing.
+          # The key follows check.yml, so changing the pinned tools refreshes it.
+          path: ~/Library/Caches/Homebrew
+          key: ${{ runner.os }}-brew-${{ hashFiles('.github/workflows/check.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-brew-
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install tools
+        run: |
+          brew install shellcheck
+          go install mvdan.cc/sh/v3/cmd/shfmt@v3.13.1
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Install goimports
+        run: go install golang.org/x/tools/cmd/goimports@v0.49.0
+
+      - name: Check shell formatting (shfmt -d)
+        run: |
+          SHELL_FILES=$(find . -type f \( -name "*.sh" -o -name "mole" \) \
+            -not -path "./.git/*" \
+            -not -path "*/node_modules/*" \
+            -not -path "*/tests/tmp-*/*" \
+            -not -path "*/.*")
+          if ! echo "$SHELL_FILES" | xargs shfmt -i 4 -ci -sr -d; then
+            echo "::error::Shell files are not formatted. Run './scripts/check.sh --format' locally and commit."
+            exit 1
+          fi
+
+      - name: Check Go formatting (goimports -l)
+        run: |
+          export PATH=$(go env GOPATH)/bin:$PATH
+          UNFORMATTED=$(goimports -l -local github.com/tw93/mole ./cmd ./internal)
+          if [[ -n "$UNFORMATTED" ]]; then
+            echo "::error::Go files are not formatted:"
+            echo "$UNFORMATTED"
+            echo "Run './scripts/check.sh --format' locally and commit."
+            exit 1
+          fi
+
+  quality:
+    name: Check
+    runs-on: macos-latest
+    timeout-minutes: 20
+    needs: format
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Cache Homebrew
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          # Cache only the bottle download cache. Homebrew is under
+          # /opt/homebrew on the arm64 runners, and this repo has no Brewfile,
+          # so the old fixed key and /usr/local/Cellar paths restored nothing.
+          # The key follows check.yml, so changing the pinned tools refreshes it.
+          path: ~/Library/Caches/Homebrew
+          key: ${{ runner.os }}-brew-${{ hashFiles('.github/workflows/check.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-brew-
+
+      - name: Install tools
+        run: brew install shellcheck
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install golangci-lint
+        run: |
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Fetch the Windows CLI for the skill audit
+        run: git fetch --no-tags --depth=1 origin windows:refs/remotes/origin/windows
+
+      - name: Run check script
+        env:
+          MOLE_SKILL_AUDIT_REQUIRE_WINDOWS: "1"
+        run: ./scripts/check.sh --no-format

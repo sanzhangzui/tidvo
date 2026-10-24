@@ -1,0 +1,31 @@
+name: Product validation
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  fixtures:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-14, macos-15]
+        python: ['3.11', '3.13']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python3 -m unittest discover -s tests -v
+      - run: bash -n scripts/mole_bridge.sh
+      - if: runner.os == 'macOS'
+        run: python3 tests/benchmark_fixture.py
+      - run: python3 scripts/build_release.py
+  upstream-safety:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install bats-core shellcheck shfmt
+      - run: shellcheck scripts/mole_bridge.sh
+      - run: shfmt -i 4 -ci -sr -d scripts/mole_bridge.sh
+      - run: shellcheck --rcfile vendor/mole/.shellcheckrc vendor/mole/lib/core/log.sh vendor/mole/lib/core/file_ops.sh
+      - working-directory: vendor/mole
+        run: bats tests/file_ops_mole_delete.bats tests/file_ops_size.bats tests/file_ops_safe_remove_symlink.bats tests/user_file_ops.bats tests/core_safe_functions.bats tests/history.bats tests/path_validation_fuzz.bats

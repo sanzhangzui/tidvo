@@ -1,0 +1,613 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"runtime"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/shirou/gopsutil/v4/disk"
+)
+
+var skipDiskMounts = map[string]bool{
+	"/System/Volumes/VM":       true,
+	"/System/Volumes/Preboot":  true,
+	"/System/Volumes/Update":   true,
+	"/System/Volumes/xarts":    true,
+	"/System/Volumes/Hardware": true,
+	"/System/Volumes/Data":     true,
+	"/dev":                     true,
+}
+
+var skipDiskFSTypes = map[string]bool{
+	"afpfs":   true,
+	"autofs":  true,
+	"cifs":    true,
+	"devfs":   true,
+	"fuse":    true,
+	"fuseblk": true,
+	"fusefs":  true,
+	"macfuse": true,
+	"nfs":     true,
+	"osxfuse": true,
+	"procfs":  true,
+	"smbfs":   true,
+	"tmpfs":   true,
+	"webdav":  true,
+}
+
+var (
+	diskPartitionsFunc = disk.Partitions
+	diskUsageFunc      = disk.Usage
+)
+
+const (
+	smartStatusVerified    = "verified"
+	smartStatusFailing     = "failing"
+	smartStatusUnsupported = "unsupported"
+	smartStatusUnknown     = "unknown"
+)
+
+func collectDisks() ([]DiskStatus, error) {
+	return collectDisksWithCorrections(true)
+}
+
+func collectDisksFast() ([]DiskStatus, error) {
+	return collectDisksWithCorrections(false)
+}
+
+func collectDisksWithCorrections(useCorrections bool) ([]DiskStatus, error) {
+	partitions, err := diskPartitionsFunc(false)
+	if err != nil {
+		return nil, err
+	}
+
+	var (
+		disks      []DiskStatus
+		seenDevice = make(map[string]bool)
+		seenVolume = make(map[string]bool)
+	)
+	for _, part := range partitions {
+		if shouldSkipDiskPartition(part) {
+			continue
+		}
+		baseDevice := baseDeviceName(part.Device)
+		if baseDevice == "" {
+			baseDevice = part.Device
+		}
+		if seenDevice[baseDevice] {
+			continue
+		}
+		usage, err := diskUsageFunc(part.Mountpoint)
+		if err != nil || usage.Total == 0 {
+			continue
+		}
+		total := usage.Total
+		var plistProbe *diskPlistProbe
+		if useCorrections && runtime.GOOS == "darwin" {
+			// The total-size correction and the APFS container-free correction
+			// both read the same `diskutil info -plist` document, so one bounded
+			// probe per mount serves both instead of spawning diskutil twice.
+			plistProbe = newDiskPlistProbe(part.Mountpoint)
+			total = correctDiskTotalBytesWithProbe(total, plistProbe)
+		}
+		// Skip <1GB volumes.
+		if total < 1<<30 {
+			continue
+		}
+		// Use size-based dedupe key for shared pools.
+		volKey := fmt.Sprintf("%s:%d", part.Fstype, total)
+		if seenVolume[volKey] {
+			continue
+		}
+		used := usage.Used
+		usedPercent := usage.UsedPercent
+		purgeable := uint64(0)
+		if useCorrections && runtime.GOOS == "darwin" && strings.ToLower(part.Fstype) == "apfs" {
+			used, usedPercent, purgeable = correctAPFSDiskUsageWithProbe(
+				part.Mountpoint, total, usage.Used, usage.Free, plistProbe)
+		}
+
+		disks = append(disks, DiskStatus{
+			Mount:       part.Mountpoint,
+			Device:      part.Device,
+			Used:        used,
+			Total:       total,
+			UsedPercent: usedPercent,
+			Fstype:      part.Fstype,
+			External:    !useCorrections && strings.HasPrefix(part.Mountpoint, "/Volumes/"),
+			SmartStatus: smartStatusUnknown,
+			Purgeable:   purgeable,
+		})
+		seenDevice[baseDevice] = true
+		seenVolume[volKey] = true
+	}
+
+	if useCorrections {
+		annotateDiskMetadata(disks)
+	}
+
+	sort.Slice(disks, func(i, j int) bool {
+		// First, prefer internal disks over external
+		if disks[i].External != disks[j].External {
+			return !disks[i].External
+		}
+		// Then sort by size (largest first)
+		return disks[i].Total > disks[j].Total
+	})
+
+	if len(disks) > 3 {
+		disks = disks[:3]
+	}
+
+	return disks, nil
+}
+
+func shouldSkipDiskPartition(part disk.PartitionStat) bool {
+	if strings.HasPrefix(part.Device, "/dev/loop") {
+		return true
+	}
+	if skipDiskMounts[part.Mountpoint] {
+		return true
+	}
+	if strings.HasPrefix(part.Mountpoint, "/System/Volumes/") {
+		return true
+	}
+	if strings.HasPrefix(part.Mountpoint, "/private/") {
+		return true
+	}
+
+	fstype := strings.ToLower(part.Fstype)
+	if skipDiskFSTypes[fstype] || strings.Contains(fstype, "fuse") {
+		return true
+	}
+
+	// On macOS, local disks should come from /dev. This filters sshfs/macFUSE-style
+	// mounts that can mirror the root volume and show up as duplicate internal disks.
+	if runtime.GOOS == "darwin" && part.Device != "" && !strings.HasPrefix(part.Device, "/dev/") {
+		return true
+	}
+
+	return false
+}
+
+type diskMetadata struct {
+	External    bool
+	SmartStatus string
+}
+
+var (
+	// Slow disk metadata cache.
+	lastDiskCacheAt   time.Time
+	diskMetadataCache = make(map[string]diskMetadata)
+	diskCacheTTL      = 2 * time.Minute
+
+	// Finder startup disk usage cache (macOS APFS purgeable-aware).
+	finderDiskCacheMu  sync.Mutex
+	finderDiskCachedAt time.Time
+	finderDiskFree     uint64
+	finderDiskTotal    uint64
+
+	// Trash size cache. ~/.Trash can contain deep trees, and status refreshes
+	// every second; a short cache prevents repeated WalkDir work without
+	// hiding changes for long.
+	trashSizeCacheMu      sync.Mutex
+	trashSizeCachedAt     time.Time
+	trashSizeCachedValue  uint64
+	trashSizeCachedApprox bool
+	trashSizeCacheTTL     = 5 * time.Second
+)
+
+func annotateDiskMetadata(disks []DiskStatus) {
+	if len(disks) == 0 || runtime.GOOS != "darwin" || !commandExists("diskutil") {
+		return
+	}
+
+	now := time.Now()
+	// Clear stale cache.
+	if now.Sub(lastDiskCacheAt) > diskCacheTTL {
+		diskMetadataCache = make(map[string]diskMetadata)
+		lastDiskCacheAt = now
+	}
+
+	for i := range disks {
+		base := baseDeviceName(disks[i].Device)
+		if base == "" {
+			base = disks[i].Device
+		}
+
+		if metadata, ok := diskMetadataCache[base]; ok {
+			disks[i].External = metadata.External
+			disks[i].SmartStatus = metadata.SmartStatus
+			continue
+		}
+
+		metadata, err := readDiskMetadata(base)
+		if err != nil {
+			metadata.External = strings.HasPrefix(disks[i].Mount, "/Volumes/")
+		}
+		disks[i].External = metadata.External
+		disks[i].SmartStatus = metadata.SmartStatus
+		diskMetadataCache[base] = metadata
+	}
+}
+
+func baseDeviceName(device string) string {
+	device = strings.TrimPrefix(device, "/dev/")
+	if !strings.HasPrefix(device, "disk") {
+		return device
+	}
+	for i := 4; i < len(device); i++ {
+		if device[i] == 's' {
+			return device[:i]
+		}
+	}
+	return device
+}
+
+func readDiskMetadata(device string) (diskMetadata, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	out, err := runCmd(ctx, "diskutil", "info", device)
+	if err != nil {
+		return diskMetadata{SmartStatus: smartStatusUnknown}, err
+	}
+	return parseDiskMetadata(out)
+}
+
+func parseDiskMetadata(out string) (diskMetadata, error) {
+	metadata := diskMetadata{SmartStatus: smartStatusUnknown}
+	var (
+		externalFound bool
+		locationFound bool
+		locationValue bool
+	)
+	for line := range strings.Lines(out) {
+		trim := strings.TrimSpace(line)
+		if strings.HasPrefix(trim, "Internal:") {
+			externalFound = true
+			metadata.External = strings.Contains(trim, "No")
+		}
+		if !externalFound && strings.HasPrefix(trim, "Device Location:") {
+			locationFound = true
+			locationValue = strings.Contains(trim, "External")
+		}
+		if smartValue, ok := strings.CutPrefix(trim, "SMART Status:"); ok {
+			value := strings.ToLower(strings.TrimSpace(smartValue))
+			switch value {
+			case "verified":
+				metadata.SmartStatus = smartStatusVerified
+			case "failing", "failed":
+				metadata.SmartStatus = smartStatusFailing
+			case "not supported", "unsupported":
+				metadata.SmartStatus = smartStatusUnsupported
+			default:
+				metadata.SmartStatus = smartStatusUnknown
+			}
+		}
+	}
+	if !externalFound && locationFound {
+		externalFound = true
+		metadata.External = locationValue
+	}
+	if !externalFound {
+		return metadata, errors.New("diskutil info missing Internal field")
+	}
+	return metadata, nil
+}
+
+// diskPlistProbe memoizes one bounded `diskutil info -plist <mount>` read for
+// a single collection pass. The total-size correction and the APFS
+// container-free correction ask about the same mountpoint and the plist
+// already carries both values, so sharing the probe removes one diskutil
+// subprocess per volume without changing either fallback chain.
+type diskPlistProbe struct {
+	mountpoint string
+	once       sync.Once
+	raw        string
+	err        error
+}
+
+func newDiskPlistProbe(mountpoint string) *diskPlistProbe {
+	return &diskPlistProbe{mountpoint: mountpoint}
+}
+
+// output runs the probe at most once; concurrent callers are not expected (the
+// collection loop is serial) but sync.Once keeps it safe and idempotent.
+func (p *diskPlistProbe) output() (string, error) {
+	p.once.Do(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		p.raw, p.err = runCmd(ctx, "diskutil", "info", "-plist", p.mountpoint)
+	})
+	return p.raw, p.err
+}
+
+func (p *diskPlistProbe) totalBytes() (uint64, error) {
+	out, err := p.output()
+	if err != nil {
+		return 0, err
+	}
+	// Prefer TotalSize, but keep older/plainer keys as fallbacks.
+	return extractPlistUint(out, "TotalSize", "DiskSize", "Size")
+}
+
+func (p *diskPlistProbe) containerFreeBytes() (uint64, error) {
+	out, err := p.output()
+	if err != nil {
+		return 0, err
+	}
+	return extractPlistUint(out, "APFSContainerFree")
+}
+
+// correctDiskTotalBytes uses diskutil's plist output when macOS reports a
+// meaningfully different disk size than gopsutil. This fixes external APFS
+// volumes that can show doubled capacities through statfs/gopsutil.
+func correctDiskTotalBytes(mountpoint string, rawTotal uint64) uint64 {
+	return correctDiskTotalBytesWithProbe(rawTotal, newDiskPlistProbe(mountpoint))
+}
+
+func correctDiskTotalBytesWithProbe(rawTotal uint64, probe *diskPlistProbe) uint64 {
+	if rawTotal == 0 || !commandExists("diskutil") {
+		return rawTotal
+	}
+
+	diskutilTotal, err := probe.totalBytes()
+	if err != nil || diskutilTotal == 0 {
+		return rawTotal
+	}
+
+	if uint64AbsDiff(rawTotal, diskutilTotal) > 1<<30 {
+		return diskutilTotal
+	}
+
+	return rawTotal
+}
+
+// correctAPFSDiskUsage returns Finder-accurate used bytes, percent, and the
+// purgeable bytes Finder counts as free, for an APFS volume. It accounts for
+// purgeable caches and APFS local snapshots that statfs incorrectly counts as
+// "used". Uses a three-tier fallback:
+//  1. Finder via osascript (startup disk only), exact match with macOS Finder
+//  2. diskutil APFSContainerFree, corrects APFS snapshot space
+//  3. Raw gopsutil values, original statfs-based calculation
+func correctAPFSDiskUsage(mountpoint string, total, rawUsed, rawFree uint64) (used uint64, usedPercent float64, purgeable uint64) {
+	return correctAPFSDiskUsageWithProbe(mountpoint, total, rawUsed, rawFree, newDiskPlistProbe(mountpoint))
+}
+
+func correctAPFSDiskUsageWithProbe(mountpoint string, total, rawUsed, rawFree uint64, probe *diskPlistProbe) (used uint64, usedPercent float64, purgeable uint64) {
+	// Tier 1: Finder via osascript (startup disk at "/" only).
+	if mountpoint == "/" && commandExists("osascript") {
+		if finderFree, finderTotal, err := getFinderStartupDiskFreeBytes(); err == nil &&
+			finderTotal > 0 && finderFree <= finderTotal {
+			used = finderTotal - finderFree
+			usedPercent = float64(used) / float64(finderTotal) * 100.0
+			return used, usedPercent, finderPurgeableBytes(rawFree, finderFree)
+		}
+	}
+
+	// Tier 2: diskutil APFSContainerFree (corrects APFS local snapshots).
+	if commandExists("diskutil") {
+		if containerFree, err := probe.containerFreeBytes(); err == nil && containerFree <= total {
+			corrected := total - containerFree
+			// Only apply if it meaningfully differs (>1GB) from raw to avoid noise.
+			if rawUsed > corrected && rawUsed-corrected > 1<<30 {
+				used = corrected
+				usedPercent = float64(used) / float64(total) * 100.0
+				return used, usedPercent, 0
+			}
+		}
+	}
+
+	// Tier 3: fall back to raw gopsutil values.
+	return rawUsed, float64(rawUsed) / float64(total) * 100.0, 0
+}
+
+// finderPurgeableBytes returns the purgeable portion of Finder's free space:
+// Finder counts reclaimable purgeable files as free, while statfs (df) does
+// not, so the difference is the purgeable total. Both inputs must come from
+// the same accounting: rawFree is the statfs free figure, never a value
+// derived from the diskutil-corrected total, or the correction itself would
+// be misreported as purgeable space.
+func finderPurgeableBytes(rawFree, finderFree uint64) uint64 {
+	if finderFree <= rawFree {
+		return 0
+	}
+	return finderFree - rawFree
+}
+
+// authPromptsDisabled mirrors the shell test-mode guard: MOLE_TEST_MODE or
+// MOLE_TEST_NO_AUTH set to 1 means nothing may raise an authorization prompt.
+func authPromptsDisabled() bool {
+	return os.Getenv("MOLE_TEST_MODE") == "1" || os.Getenv("MOLE_TEST_NO_AUTH") == "1"
+}
+
+// getFinderStartupDiskFreeBytes queries Finder via osascript for the startup
+// disk free space. Finder's value includes purgeable caches and APFS snapshots,
+// matching the "X GB of Y GB used" display. Results are cached for 2 minutes.
+func getFinderStartupDiskFreeBytes() (free, total uint64, err error) {
+	// An Apple event to Finder can raise a TCC Automation prompt, so test and
+	// no-auth runs fall through to the diskutil and statfs tiers instead.
+	if authPromptsDisabled() {
+		return 0, 0, errors.New("finder query disabled in test mode")
+	}
+
+	finderDiskCacheMu.Lock()
+	defer finderDiskCacheMu.Unlock()
+
+	if !finderDiskCachedAt.IsZero() && time.Since(finderDiskCachedAt) < diskCacheTTL {
+		return finderDiskFree, finderDiskTotal, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Single call returns both values as a comma-separated pair.
+	out, err := runCmd(ctx, "osascript", "-e",
+		`tell application "Finder" to return {free space of startup disk, capacity of startup disk}`)
+	if err != nil {
+		// Cache the failure timestamp so repeated calls within diskCacheTTL
+		// return immediately instead of each waiting the full 5s timeout.
+		finderDiskCachedAt = time.Now()
+		return 0, 0, err
+	}
+
+	// Output format: "3.2489E+11, 4.9438E+11" or "324892202048, 494384795648"
+	parts := strings.SplitN(strings.TrimSpace(out), ",", 2)
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("unexpected osascript output: %q", out)
+	}
+
+	freeF, err1 := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+	totalF, err2 := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+	if err1 != nil || err2 != nil || freeF <= 0 || totalF <= 0 {
+		return 0, 0, fmt.Errorf("failed to parse osascript output: %q", out)
+	}
+
+	finderDiskFree = uint64(freeF)
+	finderDiskTotal = uint64(totalF)
+	finderDiskCachedAt = time.Now()
+	return finderDiskFree, finderDiskTotal, nil
+}
+
+func extractPlistUint(plist string, keys ...string) (uint64, error) {
+	for _, key := range keys {
+		marker := "<key>" + key + "</key>"
+		_, rest, found := strings.Cut(plist, marker)
+		if !found {
+			continue
+		}
+
+		_, rest, found = strings.Cut(rest, "<integer>")
+		if !found {
+			continue
+		}
+
+		value, _, found := strings.Cut(rest, "</integer>")
+		if !found {
+			continue
+		}
+
+		parsed, err := strconv.ParseUint(strings.TrimSpace(value), 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("failed to parse %s: %v", key, err)
+		}
+		return parsed, nil
+	}
+
+	return 0, fmt.Errorf("%s not found", strings.Join(keys, "/"))
+}
+
+func uint64AbsDiff(a, b uint64) uint64 {
+	if a > b {
+		return a - b
+	}
+	return b - a
+}
+
+func (c *Collector) collectDiskIO(now time.Time) DiskIOStatus {
+	counters, err := disk.IOCounters()
+	if err != nil || len(counters) == 0 {
+		return DiskIOStatus{}
+	}
+
+	var total disk.IOCountersStat
+	for _, v := range counters {
+		total.ReadBytes += v.ReadBytes
+		total.WriteBytes += v.WriteBytes
+	}
+
+	if c.lastDiskAt.IsZero() {
+		c.prevDiskIO = total
+		c.lastDiskAt = now
+		return DiskIOStatus{}
+	}
+
+	elapsed := now.Sub(c.lastDiskAt).Seconds()
+	if elapsed <= 0 {
+		elapsed = 1
+	}
+
+	readRate := float64(counterDelta(total.ReadBytes, c.prevDiskIO.ReadBytes)) / 1024 / 1024 / elapsed
+	writeRate := float64(counterDelta(total.WriteBytes, c.prevDiskIO.WriteBytes)) / 1024 / 1024 / elapsed
+
+	c.prevDiskIO = total
+	c.lastDiskAt = now
+
+	if readRate < 0 {
+		readRate = 0
+	}
+	if writeRate < 0 {
+		writeRate = 0
+	}
+
+	return DiskIOStatus{ReadRate: readRate, WriteRate: writeRate}
+}
+
+func counterDelta(current, previous uint64) uint64 {
+	if current < previous {
+		return 0
+	}
+	return current - previous
+}
+
+// collectTrashSize returns the total size in bytes of ~/.Trash and whether
+// the result is approximate (true when the 2s timeout was reached).
+func collectTrashSize() (uint64, bool) {
+	trashSizeCacheMu.Lock()
+	if !trashSizeCachedAt.IsZero() && time.Since(trashSizeCachedAt) < trashSizeCacheTTL {
+		value := trashSizeCachedValue
+		approx := trashSizeCachedApprox
+		trashSizeCacheMu.Unlock()
+		return value, approx
+	}
+	trashSizeCacheMu.Unlock()
+
+	total, approx := scanTrashSize()
+
+	trashSizeCacheMu.Lock()
+	trashSizeCachedValue = total
+	trashSizeCachedApprox = approx
+	trashSizeCachedAt = time.Now()
+	trashSizeCacheMu.Unlock()
+
+	return total, approx
+}
+
+func scanTrashSize() (uint64, bool) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return 0, false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	var total uint64
+	trashPath := filepath.Join(home, ".Trash")
+	_ = filepath.WalkDir(trashPath, func(_ string, d fs.DirEntry, err error) error {
+		if ctx.Err() != nil {
+			return fs.SkipAll
+		}
+		if err != nil {
+			return nil
+		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			return nil
+		}
+		if !d.IsDir() {
+			if info, err := d.Info(); err == nil {
+				total += uint64(info.Size())
+			}
+		}
+		return nil
+	})
+	return total, ctx.Err() != nil
+}

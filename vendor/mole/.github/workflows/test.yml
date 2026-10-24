@@ -1,0 +1,142 @@
+name: Validation
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Unit & Integration Tests
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install tools
+        # fd keeps tests/installer_fd.bats in the run: scripts/test.sh drops the
+        # whole file when fd is missing, which silently hid its 25 cases.
+        run: brew install bats-core shellcheck coreutils parallel fd
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Run test script
+        env:
+          # The perf cases now time a plain child shell, not the Bats DEBUG
+          # trap, so these budgets can be tight enough to catch a new fork per
+          # call while still leaving several times the local measurement.
+          MOLE_PERF_BYTES_TO_HUMAN_LIMIT_MS: "1000"
+          MOLE_PERF_NORMALIZE_PATHS_LIMIT_MS: "10000"
+          MOLE_TEST_JOBS: "6"
+          # Emits a "Slowest test files" table at the end of the run. Parallel
+          # TAP output cannot be attributed to a file, so without this a single
+          # slow file that sets the whole job's wall clock stays invisible.
+          MOLE_TEST_REPORT_DIR: ${{ runner.temp }}/bats-report
+          BATS_FORMATTER: tap
+          LANG: en_US.UTF-8
+          LC_ALL: en_US.UTF-8
+        run: ./scripts/test.sh
+
+  compatibility:
+    name: macOS
+    # Hosted runtime coverage is macOS 15 and 26, not macOS 14. macOS 26 is
+    # pinned so it stays a distinct lane after macos-latest, which the full
+    # test job uses, moves on. Release builds separately enforce an
+    # LC_BUILD_VERSION minimum of macOS 12 in check_release_minos.sh.
+    strategy:
+      matrix:
+        os: [macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install bats
+        run: brew install bats-core coreutils
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Smoke load on ${{ matrix.os }}
+        run: |
+          echo "Testing on ${{ matrix.os }}..."
+          bash -n mole
+          source lib/core/common.sh
+          echo "✓ Successfully loaded on ${{ matrix.os }}"
+
+      - name: Run core bats subset
+        env:
+          MOLE_TEST_NO_AUTH: "1"
+          MOLE_PERF_NORMALIZE_PATHS_LIMIT_MS: "10000"
+          BATS_FORMATTER: tap
+          LANG: en_US.UTF-8
+          LC_ALL: en_US.UTF-8
+        # clean_app_caches.bats is here because it is the suite that reads
+        # system tool output whose format varies by macOS version, which the
+        # full run on macos-latest cannot see. tw93/Mole#1512 was reported on
+        # macOS 15, fixed, then silently regressed for eight days with CI green
+        # the whole time, because that file was not in this subset. It adds
+        # about 16s to a job that runs in 90s under a 30 minute budget.
+        run: |
+          bats tests/core_safe_functions.bats \
+               tests/core_common.bats \
+               tests/core_timeout.bats \
+               tests/regression.bats \
+               tests/cli.bats \
+               tests/clean_app_caches.bats
+
+  security:
+    name: Security Checks
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Install tools
+        run: brew install bats-core coreutils
+
+      - name: Check for unsafe rm usage
+        run: python3 scripts/audit_destructive_sinks.py
+
+      - name: Verify app protection
+        run: |
+          echo "Verifying critical file protection..."
+          bash -c '
+          source lib/core/common.sh
+          if should_protect_from_uninstall "com.apple.Safari"; then
+            echo "✓ Safari is protected"
+          else
+            echo "✗ Safari protection failed"
+            exit 1
+          fi
+          '
+
+      - name: Scan for secrets (gitleaks)
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+      - name: Run high-risk path regression tests
+        env:
+          MOLE_TEST_NO_AUTH: "1"
+          BATS_FORMATTER: tap
+          LANG: en_US.UTF-8
+          LC_ALL: en_US.UTF-8
+        run: bats tests/core_safe_functions.bats tests/purge.bats tests/installer.bats

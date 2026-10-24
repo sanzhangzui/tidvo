@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.venv/
+dist/
+.coverage
+.DS_Store
+
+# Personal scan reports and local configuration are never release source.
+/scan*.json
+/agent-audit*.json
+/reports/
+/.env
+/.env.*

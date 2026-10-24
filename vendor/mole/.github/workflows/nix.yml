@@ -1,0 +1,74 @@
+name: Nix
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: Package (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Nix
+        uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31
+      - name: Flake check
+        shell: bash
+        run: |
+          # shellcheck disable=SC2016 # Nix expands ${system}; the shell must leave it literal.
+          test "$(nix eval --no-write-lock-file --json .#checks --apply 'checks: builtins.all (system: checks.${system} ? formatting) [ "aarch64-darwin" "x86_64-darwin" ]')" = true
+          check_log="$RUNNER_TEMP/nix-flake-check.log"
+          status=0
+          nix flake check --no-write-lock-file --print-build-logs 2>&1 | tee "$check_log" || status=$?
+          if [[ $status -ne 0 ]]; then
+            # A go.mod or go.sum change without a matching vendorHash fails here; name the new hash.
+            got=$(awk '/hash mismatch in fixed-output derivation .*-go-modules\.drv/ { m = 1; next } m && $1 == "got:" { print $2; exit }' "$check_log")
+            if [[ -n "$got" ]]; then
+              echo "::error file=package.nix::vendorHash no longer matches go.mod/go.sum. Set vendorHash = \"$got\"; in package.nix."
+            fi
+          fi
+          exit "$status"
+      - name: Link package
+        # Already built by the flake check; this only creates the result symlink.
+        run: nix build --no-write-lock-file .#mole
+      - name: Check installed package
+        run: python3 scripts/test_nix_package.py result
+      - name: Check profile install, upgrade and removal
+        run: |
+          set -euo pipefail
+          profile_dir=$(mktemp -d "$RUNNER_TEMP/mole-nix-profile.XXXXXX")
+          cleanup() {
+            rm -rf "$profile_dir" # SAFE: Only this step's private mktemp directory and profile are removed.
+          }
+          trap cleanup EXIT
+          profile="$profile_dir/profile"
+          mkdir "$profile_dir/home"
+          nix profile install --profile "$profile" --no-write-lock-file .#mole
+          nix profile list --profile "$profile" --json | python3 -c 'import json, sys; assert "mole" in json.load(sys.stdin)["elements"]'
+          HOME="$profile_dir/home" MOLE_TEST_NO_AUTH=1 "$profile/bin/mo" --version
+          nix profile upgrade --profile "$profile" --no-write-lock-file mole
+          HOME="$profile_dir/home" MOLE_TEST_NO_AUTH=1 "$profile/bin/mo" --version
+          nix profile remove --profile "$profile" mole
+          test ! -e "$profile/bin/mo" && test ! -L "$profile/bin/mo"
+          test ! -e "$profile/bin/mole" && test ! -L "$profile/bin/mole"
