@@ -26,6 +26,10 @@ class OccupancyTests(unittest.TestCase):
         self.cache.mkdir(parents=True)
         (self.cache / "fixture.pyc").write_text("fixture bytecode")
         (self.cache.parent / "pyproject.toml").write_text('[project]\nname="fixture"')
+        environment = patch.dict(os.environ, {"HOME": str(self.home),
+                                 "PATH": os.environ.get("PATH", "/usr/bin:/bin")}, clear=True)
+        environment.start()
+        self.addCleanup(environment.stop)
         self.pid, self.uid = os.getpid(), os.getuid()
         self.calls = []
         self.overrides = {}
