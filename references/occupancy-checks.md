@@ -46,6 +46,12 @@ occupancy. This does not broaden cache rules or permit generic database cleanup.
 
 ## Receipts and limits
 
+Version 0.2.4 includes the exact new regenerable user-cache rules listed in
+cleanup-coverage.md. Verified obsolete program packages may use a separate
+`current_user_obsolete_extension` scope only after the engine validates signed
+replacement/package context. Contextless legacy packages retain the strict probe.
+This does not authorize arbitrary Agent state, logs, databases or offline stores.
+
 Apply entries and restore results record `occupancy`: status, scope and reason.
 Current-user mode explicitly sets `other_users_certified=false`. It is a bounded
 observation for regenerable user caches, not proof of globally invisible processes

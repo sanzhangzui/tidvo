@@ -6,12 +6,13 @@ import stat
 import tempfile
 from pathlib import Path
 from .app_installation import RESIDUAL_RULE
+from .cache_rules import REGENERABLE_RULES
 
 # Only these reviewed, regenerable cache rules may use current-user evidence.
 # Logs, offline site stores, installed tools and build/delivery outputs stay strict.
 USER_CACHE_RULES = frozenset({"browser.resource_cache", "browser.component_download",
     "editor.vsix", "editor.compiled_cache", "app.page_cache", "developer.npm_prebuild",
-    "project.__pycache__", "project.pytest_cache", "project.mypy_cache", "project.ruff_cache"})
+    "project.__pycache__", "project.pytest_cache", "project.mypy_cache", "project.ruff_cache"}) | REGENERABLE_RULES
 
 
 def response_status(result):
@@ -109,9 +110,10 @@ def check_occupancy(path, home, command, rule_id=None):
     complete = root is not None and root.returncode == 0 and not root.stderr.strip() and {"p1", "u0"}.issubset(root.stdout.splitlines())
     if complete:
         evidence.update(scope="root_visible_probe", reason="root_process_visible")
-    elif platform.system() == "Darwin" and (rule_id in USER_CACHE_RULES or rule_id == RESIDUAL_RULE) and cache_target(path, home):
+    elif platform.system() == "Darwin" and (rule_id in USER_CACHE_RULES or rule_id in {RESIDUAL_RULE, "editor.obsolete_extension"}) and cache_target(path, home):
         valid, reason, count = user_visibility(command)
-        evidence.update(scope="current_user_uninstalled_residual" if rule_id == RESIDUAL_RULE else "current_user_cache", uid=os.getuid(), reason=reason,
+        scope = "current_user_uninstalled_residual" if rule_id == RESIDUAL_RULE else "current_user_obsolete_extension" if rule_id == "editor.obsolete_extension" else "current_user_cache"
+        evidence.update(scope=scope, uid=os.getuid(), reason=reason,
                         observed_user_processes=count, other_users_certified=False)
         if not valid:
             return evidence

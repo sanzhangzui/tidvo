@@ -91,6 +91,21 @@ class InterfaceTests(unittest.TestCase):
         self.assertEqual(value["product_only"][0]["path"], "/fixture/other")
         self.assertNotIn("extra_reclaimable_bytes", value)
 
+    def test_baseline_comparison_splits_missing_deferred_and_unmeasured_without_parent_double_count(self):
+        compare=script_module('compare_baseline').compare
+        report={'scan_status':'partial','candidates':[
+            {'path':'/fixture/cache/child','action':'report_only','scan_status':'complete','allocated_bytes':90000000,'activity':{'activity':'active'},'rule_id':'editor.vsix'},
+            {'path':'/fixture/npm','action':'report_only','scan_status':'unavailable','allocated_bytes':None,'rule_id':'developer.npm_download'}]}
+        text='/fixture/cache  # 100MB\n/fixture/cache/child  # 90MB, counted under /fixture/cache\n/fixture/npm  # 122.5MB\n/fixture/missing  # 25MB\n/fixture/unknown  # size unknown\n'
+        c=compare(report,text)['coverage_summary']
+        self.assertEqual(c['mole_known_annotated_bytes'],247500000)
+        self.assertEqual(c['matching_path_annotated_bytes'],222500000)
+        self.assertEqual(c['no_matching_path_annotated_bytes'],25000000)
+        self.assertEqual(c['matching_path_without_measured_size_bytes'],122500000)
+        self.assertEqual(c['by_disposition']['quit_app'],100000000)
+        self.assertEqual(c['mole_unknown_size_count'],1)
+        self.assertEqual(c['parent_family_match_count'],1)
+
     def test_release_is_self_contained_and_has_corresponding_source(self):
         result = script_module("build_release").build(Path(self.temp.name) / "release")
         extract = Path(self.temp.name) / "unpacked"
@@ -103,6 +118,9 @@ class InterfaceTests(unittest.TestCase):
             self.assertEqual([n for n in names if n.endswith('/SKILL.md')], ['tidvo/SKILL.md'])
             tar.extractall(extract, filter='data')
         skill = extract / "tidvo"
+        for name in ["macdev/cache_rules.py", "macdev/cleanup_summary.py", "macdev/extension_packages.py",
+                     "macdev/native_previews.py", "references/cleanup-coverage.md", "tests/test_cleanup_expansion.py"]:
+            self.assertTrue((skill / name).is_file(), name)
         for name in ["SKILL.md", "README.zh-CN.md", "INSTALL.md", "LICENSE", "UPSTREAM.md", "macdev/engine.py", "macdev/occupancy.py", "macdev/app_installation.py", "macdev/agent_catalog.py", "macdev/agent_inspection.py", "references/agent-adapters.md", "references/uninstalled-apps.md", "scripts/tidvo.py", "scripts/mac_cleanup.py", "scripts/mole_bridge.sh", "vendor/mole/lib/core/file_ops.sh", "tests/test_product.py", "tests/test_agents.py", "tests/test_occupancy.py", "tests/test_uninstalled.py"]:
             self.assertTrue((skill / name).is_file(), name)
         r = subprocess.run([sys.executable, str(skill / "scripts/tidvo.py"), "--version"],

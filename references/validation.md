@@ -1,4 +1,4 @@
-# Tidvo validation evidence — 0.2.3 beta
+# Tidvo validation evidence — 0.2.4 beta
 
 Local evidence recorded on 2026-10-24. Publication and GitHub CI results are
 separate from these local checks. This is not a claim of fewer false positives
@@ -8,10 +8,11 @@ or more reclaimed GB across real users.
 
 - Local host: macOS 26.4.1, Apple Silicon arm64.
 - Product suite: `python3 -m unittest discover -s tests -v`; Python 3.14.2 and
-  Python 3.11.12: **190 tests passed on each interpreter**, with one native
-  process-visibility integration test skipped inside the sandbox. The separate
-  17-test occupancy suite passed outside the sandbox without skips, including
-  a held-open fixture refusal and actual pinned-backend Trash/restore roundtrip.
+  Python 3.11.12: **239 tests passed on each interpreter**, with two native
+  process-visibility integration checks skipped inside the sandbox. The complete
+  239-test packaged suite also passed outside the sandbox without skips, including a
+  held-open fixture refusal, new cache families and retired Agent packages moving
+  through the actual pinned Trash backend and restoring without overwrites.
   Fixtures cover scan/plan/apply/restore, Git changes, configured
   references, update locks, invalid plans, partial evidence, path replacement,
   interrupted moves, Trash failure, restore conflicts and packaging. A reference
@@ -40,10 +41,10 @@ or more reclaimed GB across real users.
   changes after planning, including another project's new reference or a change
   during occupancy checks. Explicit roots/shared resources override the narrow
   worktree-cache exception. The pre-existing 100 tests still pass.
-- Bash syntax and skill frontmatter validation pass. The self-contained 0.2.3
+- Bash syntax and skill frontmatter validation pass. The self-contained 0.2.4
   archive includes the catalog, protection code, Agent tests and coverage guide;
-  the extracted package also passes the full 190-test suite (the same sandbox
-  visibility skip applies). No personal scan
+  the extracted package also passes the full 239-test suite outside the sandbox
+  without skips. No personal scan
   report, user configuration or upstream skill entry point is packaged.
 - The Tidvo rename adds a fixture verifying that both the new and legacy Python
   entry points read the same existing signed history without migrating state.
@@ -78,6 +79,17 @@ or more reclaimed GB across real users.
   Ubuntu with Python 3.11/3.13, plus the upstream safety task:
   https://github.com/sanzhangzui/tidvo/actions/runs/40070978975.
   Current-release CI is reported separately in its release notes.
+- Version 0.2.4 adds 49 checks for mutually exclusive complete-capacity reporting,
+  unavailable/lower-bound metadata sizing without move permission, hardlinks,
+  new cache paths versus installed environments/SDK/AVD/Cargo sources, partial
+  downloads and locks, unknown-owner inventory, native dry-run isolation,
+  renamed-app runtime evidence and retained Agent data versus retired programs.
+  Package tests cover replacement/registry changes, explicit same-tool roots,
+  shared links, persistent data added during occupancy, references and legacy
+  strict scope. Mole comparison fixtures cover matched/unmeasured/missing paths
+  and counted-under parent rows. No user cleanup was used to validate this change.
+  Vendored Mole and Bash movement code are unchanged; sandbox process refusal
+  was reproduced and the same fixture passes outside it without weakening guards.
 - Unchanged pinned backend: the prior required core regression passed 289 cases for
   `file_ops_mole_delete`, `file_ops_size`, `file_ops_safe_remove_symlink`,
   `user_file_ops`, `core_safe_functions`, and `history`.

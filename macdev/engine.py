@@ -14,6 +14,7 @@ from pathlib import Path
 from .probes import NativeProbe
 from .cache_context import unchanged_cache_context
 from .app_installation import RESIDUAL_RULE, validate_residual
+from .extension_packages import unchanged_extension
 from .agent_inspection import AgentPolicy
 from .probes import git_evidence
 from . import __version__
@@ -103,7 +104,8 @@ def make_plan(report, selected, state, *, probe=None, scanner_factory=Scanner):
         old, item = before[identifier], current[identifier]
         if (item["action"] != "trash" or old.get("snapshot") != item.get("snapshot")
                 or old.get("cache_context") != item.get("cache_context")
-                or old.get("residual_context") != item.get("residual_context")):
+                or old.get("residual_context") != item.get("residual_context")
+                or old.get("extension_context") != item.get("extension_context")):
             raise Refused("candidate_changed_or_report_only")
         candidates.append(item)
     plan = {"schema_version": 1, "policy_version": __version__, "id": uuid.uuid4().hex, "home": str(state.home), "created_at": now(),
@@ -155,9 +157,11 @@ def current_policy(candidate, state, projects=(), probe=None):
     p = Path(candidate["path"])
     installation = None
     policy = AgentPolicy(state.home)
+    if candidate["rule_id"] == "editor.obsolete_extension":
+        policy.inspect_extensions()
     for project in projects:
         policy.inspect_project(Path(project))
-    protection = policy.protection_for(p, candidate["rule_id"], candidate.get("cache_context"))
+    protection = policy.protection_for(p, candidate["rule_id"], candidate.get("cache_context"), candidate.get("extension_context"))
     if protection:
         raise Refused(protection["reason"])
     if candidate["rule_id"] in DEPENDENCY_RULES:
@@ -181,6 +185,7 @@ def current_policy(candidate, state, projects=(), probe=None):
     if candidate["rule_id"].startswith("project.") and git_evidence(p) not in ["untracked", "not_a_repository"]:
         raise Refused("project_now_tracked_or_git_state_unknown")
     if candidate["rule_id"] == "editor.obsolete_extension":
+        unchanged_extension(candidate, state.home)
         base = p.parent
         current = {x.get("relativeLocation") for x in read_json(base / "extensions.json")}
         if read_json(base / ".obsolete").get(p.name) is not True or p.name in current:
@@ -217,6 +222,8 @@ def apply(plan_id, state, *, confirmed=False, probe=None, backend=None):
                 if candidate.get("residual_context"):
                     entry["residual_context"] = candidate["residual_context"]
                     entry["installation"] = candidate.get("installation")
+                if candidate.get("extension_context"):
+                    entry["extension_context"] = candidate["extension_context"]
                 run["entries"].append(entry)
                 state.write("runs", run)
                 try:
@@ -230,7 +237,12 @@ def apply(plan_id, state, *, confirmed=False, probe=None, backend=None):
                             raise Refused("active_or_referenced_or_unknown")
                         if candidate.get("packages") and ev["reference_scan_status"] != "complete":
                             raise Refused("reference_evidence_incomplete")
-                        occupancy = probe.idle(p, rule_id=candidate["rule_id"])
+                        if candidate.get("extension_context") and ev["reference_scan_status"] != "complete":
+                            raise Refused("extension_reference_evidence_incomplete")
+                        occupancy_rule = candidate["rule_id"]
+                        if occupancy_rule == "editor.obsolete_extension" and not candidate.get("extension_context"):
+                            occupancy_rule = None  # Legacy/non-proven packages retain the stricter visibility gate.
+                        occupancy = probe.idle(p, rule_id=occupancy_rule)
                         if getattr(probe, "last_occupancy_evidence", None):
                             entry["occupancy"] = dict(probe.last_occupancy_evidence)
                         if occupancy != "idle":
@@ -306,7 +318,10 @@ def restore(run_id, state, *, confirmed=False, backend=None, probe=None):
                 current = tree_snapshot(src)
                 if current["identity"] != entry["snapshot"]["identity"] or current["fingerprint"] != entry["snapshot"]["fingerprint"]:
                     raise Refused("trash_payload_missing_or_changed")
-                occupancy = probe.idle(src, rule_id=entry["rule_id"])
+                occupancy_rule = entry["rule_id"]
+                if occupancy_rule == "editor.obsolete_extension" and not entry.get("extension_context"):
+                    occupancy_rule = None
+                occupancy = probe.idle(src, rule_id=occupancy_rule)
                 if getattr(probe, "last_occupancy_evidence", None):
                     record["occupancy"] = dict(probe.last_occupancy_evidence)
                 if occupancy != "idle":

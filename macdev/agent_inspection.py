@@ -12,6 +12,7 @@ from pathlib import Path
 from .agent_catalog import (CATALOG, CATALOG_VERSION, EDITOR_EXTENSION_ROOTS, EDITOR_SUPPORT_NAMES,
                             UNKNOWN_MARKERS, config_sources, expand_path)
 from .safety import Refused
+from .extension_packages import obsolete_context
 
 CACHE_RULES = {"project.__pycache__", "project.pytest_cache", "project.mypy_cache", "project.ruff_cache"}
 RESOURCE_KEYS = {"sessiondir", "memorydirectory", "automemorydirectory", "workspace", "workspacedir", "worktreeroot", "skills", "extensions", "prompts"}
@@ -110,6 +111,9 @@ class AgentPolicy:
                 self.fail_closed = True
             return
         key = (tool_id, str(path))
+        explicit = {"user_configured", "environment_override", "declared_resource_path", "shared_resource_symlink"}
+        if key in self.roots and self.roots[key]["basis"] in explicit and basis not in explicit:
+            return
         self.roots[key] = {"tool_id": tool_id, "path": str(path), "basis": basis, "role": role}
 
     def load_custom_roots(self):
@@ -285,7 +289,7 @@ class AgentPolicy:
                 continue
         return roots
 
-    def protection_for(self, path, rule, cache_context=None):
+    def protection_for(self, path, rule, cache_context=None, extension_context=None):
         p = Path(path)
         if self.fail_closed:
             return {"reason": "agent_protection_configuration_incomplete", "tool_ids": []}
@@ -307,6 +311,13 @@ class AgentPolicy:
             overlap = any(p == r or p.is_relative_to(r) or r.is_relative_to(p) for r in {original, physical})
             if not overlap:
                 continue
+            if (rule == "editor.obsolete_extension" and extension_context
+                    and root["basis"] == "known_extension_identity" and root["role"] == "installed_extension" and p == original):
+                try:
+                    if obsolete_context(p, self.home) == extension_context:
+                        continue  # Only this retired program package; all other protected roots still apply.
+                except (OSError, ValueError, Refused):
+                    pass
             builtin = root["basis"] in {"registered_location", "environment_override"} and root["role"] == "data"
             if builtin and root["tool_id"] == "codex" and rule == "agent.codex_old_release" and p.parent.name == "releases" and p.parent.parent.name == "app-server-daemon":
                 continue  # Existing current/update/lock checks still apply; no new cleanup authority.

@@ -49,6 +49,15 @@ ask again for each file or recommend reopening the removed app. Use the scoped
 uninstall workflow in [application residuals](references/uninstalled-apps.md).
 Shared resources, project files and external references remain separate.
 
+Lead cleanup reports with the complete `cleanup_summary`: ready caches, items to
+recheck after quitting apps, separately reviewed outputs/old programs, protected
+data, and incomplete evidence. Report capacities separately, including unknown
+sizes/lower bounds. Do not substitute the small executed batch for the larger
+discovered/deferred inventory. Read [cleanup coverage](references/cleanup-coverage.md)
+for scope and retired Agent program packages. Routine scans may add
+`--native-preview` for trusted local Homebrew's dry-run; it is separate manual
+advice, never an automatically executed cleanup.
+
 Lead the result with disk used/free capacity, the most useful recommended batch,
 its impact and meaningful retained groups. Agent details support that decision;
 they are not the main report unless requested. Disk capacity describes the
@@ -81,7 +90,8 @@ files are parsed locally for reference/path fields; secrets are not exported.
 Report inventory capacity separately from existing cleanup candidates. Overlapping
 roots must not be summed; use the unique total, explaining partial lower bounds.
 The existing narrow old-Codex-release, attributed Feishu cache-leaf and ephemeral
-worktree-cache rules remain independently reviewed exceptions, never authority to
+worktree-cache rules, plus verified obsolete VS Code program packages, remain
+independently reviewed exceptions, never authority to
 delete an Agent data root. Conclude with coverage gaps and a useful next step;
 do not turn an inspection request into cleanup or persistent configuration edits.
 

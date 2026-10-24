@@ -12,8 +12,11 @@ from pathlib import Path
 from .cache_context import cache_index
 from .agent_inspection import AgentPolicy
 from .app_installation import PROFILES, RESIDUAL_RULE, residual_paths, residual_context, only_database_sensitivity
+from .cache_rules import discover_cache_rules
+from .cleanup_summary import summarize
+from .extension_packages import obsolete_context
 from .probes import NativeProbe, git_evidence
-from .safety import Refused, canonical_json, deduplicate, ordinary_path, tree_snapshot
+from .safety import Refused, canonical_json, deduplicate, ordinary_path, tree_snapshot, observe_usage
 
 PROJECT_MARKERS = {"package.json", "pyproject.toml", "requirements.txt", "Cargo.toml", "go.mod", "pom.xml", "build.gradle", "build.gradle.kts", "Package.swift", ".git"}
 ARTIFACTS = {"node_modules", ".venv", "venv", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".next", ".nuxt", ".turbo", "dist", "build", "target", ".gradle", ".build", ".cxx", ".expo"}
@@ -34,7 +37,7 @@ def read_json(path):
 
 
 class Scanner:
-    def __init__(self, home=None, roots=None, excludes=(), probe=None, budget=120, uninstalled_apps=()):
+    def __init__(self, home=None, roots=None, excludes=(), probe=None, budget=120, uninstalled_apps=(), native_preview=False):
         self.started = time.monotonic()
         self.home = Path(home or Path.home()).resolve()
         self.roots = [Path(x).expanduser().absolute() for x in (roots or [])]
@@ -45,6 +48,7 @@ class Scanner:
             raise Refused("unrecognized_uninstalled_application")
         self.app_inventory = {}
         self.app_residuals = []
+        self.native_preview = native_preview
         self.deadline = time.monotonic() + budget
         self.items = []
         self.issues = []
@@ -74,9 +78,15 @@ class Scanner:
     def excluded(self, p):
         return any(p == x or p.is_relative_to(x) for x in self.excludes)
 
-    def add(self, p, rule, group, *, owner="", packages=(), notes=(), report_only=False, project=False, package_details=(), cache_context=None, residual=None):
-        if not p.exists() or self.excluded(p):
+    def add(self, p, rule, group, *, owner="", packages=(), notes=(), report_only=False, project=False, package_details=(), cache_context=None, residual=None, extension_context=None):
+        if self.excluded(p):
             return
+        try:
+            p.lstat()
+        except FileNotFoundError:
+            return
+        except OSError:
+            pass  # Keep an unavailable row below instead of silently hiding it.
         item = {"id": hashlib.sha256(canonical_json([rule, str(p)])).hexdigest()[:24], "path": str(p),
                 "rule_id": rule, "group": group, "owner": owner, "packages": list(packages),
                 "package_details": list(package_details),
@@ -90,7 +100,9 @@ class Scanner:
             item["installation"] = self.app_inventory[owner]
         if residual:
             item["residual_context"] = residual
-        protection = self.agent_policy.protection_for(p, rule, cache_context)
+        if extension_context:
+            item["extension_context"] = extension_context
+        protection = self.agent_policy.protection_for(p, rule, cache_context, extension_context)
         if protection:
             report_only = True
             item["agent_protection"] = protection
@@ -112,6 +124,8 @@ class Scanner:
                 report_only = True
             if packages and item["activity"]["reference_scan_status"] != "complete":
                 report_only = True
+            if extension_context and item["activity"]["reference_scan_status"] != "complete":
+                report_only = True
             if rule == RESIDUAL_RULE and (item["installation"]["status"] != "not_found" or not residual["user_confirmed_uninstalled"]
                                           or item["activity"]["reference_scan_status"] != "complete"):
                 report_only = True
@@ -121,6 +135,13 @@ class Scanner:
             item.update(scan_status="unavailable", action="report_only", allocated_bytes=None,
                         evidence=item["evidence"] + [str(exc) if isinstance(exc, Refused) else type(exc).__name__])
             self.issues.append({"path": str(p), "reason": item["evidence"][-1]})
+            try:
+                if (p.is_relative_to(self.home) and p.resolve() == p
+                        and (isinstance(exc, OSError) or str(exc) in {"foreign_owner", "foreign_owner_or_nested_mount", "snapshot_budget_exceeded"})):
+                    item["size_observation"] = observe_usage(p, deadline=min(self.deadline, time.monotonic() + 3))
+                    item["allocated_bytes"] = item["size_observation"]["allocated_bytes"]
+            except OSError:
+                pass
         self.items.append(item)
 
     def projects(self, *, discover_only=False):
@@ -226,7 +247,13 @@ class Scanner:
             for p in self.children(extensions):
                 if obsolete.get(p.name) is True and p.name not in current and (p / "package.json").is_file():
                     read_json(p / "package.json")
-                    self.add(p, "editor.obsolete_extension", "editors", owner="Visual Studio Code", notes=["obsolete_and_not_registered"])
+                    context = None
+                    try:
+                        context = obsolete_context(p, self.home)
+                    except (OSError, ValueError, Refused):
+                        pass
+                    self.add(p, "editor.obsolete_extension", "editors", owner="Visual Studio Code", notes=["obsolete_and_not_registered"] +
+                             (["verified_obsolete_program_package", "newer_registered_replacement"] if context else []), extension_context=context)
         except (OSError, ValueError, AttributeError):
             if extensions.exists():
                 self.issues.append({"path": str(extensions), "reason": "extension_inventory_unavailable"})
@@ -354,6 +381,35 @@ class Scanner:
         for relative, owner in [("Library/Caches/com.apple.helpd", "helpd"), ("Library/Containers/com.apple.geod/Data/tmp", "com.apple.geod")]:
             for p in self.children(self.home / relative):
                 self.add(p, "app.user_temporary", "app_caches", owner=owner, notes=["specific_user_cache_or_temporary_child"])
+        for name in ["updater.log.old", "updater_history.jsonl.old"]:
+            self.add(support / "Google/GoogleUpdater" / name, "app.historical_logs", "logs", owner="Google Chrome",
+                     notes=["historical_updater_diagnostics", "historical_debugging_records_will_be_lost"])
+        self.other_application_caches(support)
+
+    def other_application_caches(self, support):
+        # Inventory unknown owners without granting cleanup from a folder name.
+        visited = 0
+        for app in self.children(support):
+            if not app.is_dir() or app.is_symlink() or app.name in set(APPS) | {"Dia", "Google", "LarkShell", "LarkInternational", "pyinstaller"}:
+                continue
+            if self.agent_policy.protection_for(app, "app.unattributed_cache"):
+                continue
+            queue = [(app, 0)]
+            while queue:
+                parent, depth = queue.pop()
+                visited += 1
+                if visited > 2000:
+                    self.issues.append({"path": str(support), "reason": "application_cache_discovery_budget_exceeded"})
+                    return
+                for child in self.children(parent):
+                    if child.is_symlink() or not child.is_dir():
+                        continue
+                    if child.name in CACHE_NAMES:
+                        if not any(child == Path(x["path"]) or child.is_relative_to(Path(x["path"])) for x in self.items):
+                            self.add(child, "app.unattributed_cache", "app_caches", report_only=True,
+                                     notes=["application_owner_unknown", "cache_named_directory_is_not_cleanup_authority"])
+                    elif depth < 1 and not child.name.startswith("."):
+                        queue.append((child, depth + 1))
 
     def uninstalled_residuals(self):
         for owner in PROFILES:
@@ -377,14 +433,14 @@ class Scanner:
                     self.app_residuals.append(self.items.pop())
 
     def scan(self, *, audit_agents=True):
-        for function in [self.projects, self.developer, self.uninstalled_residuals, self.applications]:
+        for function in [self.projects, self.developer, lambda: discover_cache_rules(self), self.uninstalled_residuals, self.applications]:
             try:
                 function()
             except (OSError, Refused) as exc:
                 self.issues.append({"path": str(self.home), "reason": str(exc) if isinstance(exc, Refused) else type(exc).__name__})
         # Later-discovered project settings may point at an earlier candidate.
         for item in self.items:
-            protection = self.agent_policy.protection_for(Path(item["path"]), item["rule_id"], item.get("cache_context"))
+            protection = self.agent_policy.protection_for(Path(item["path"]), item["rule_id"], item.get("cache_context"), item.get("extension_context"))
             if protection:
                 item.update(action="report_only", agent_protection=protection)
                 if protection["reason"] not in item["evidence"]:
@@ -404,9 +460,13 @@ class Scanner:
                 "uninstalled_residual_inventory": self.app_residuals,
                 "issues": self.issues, "disk_usage": capacity, "projects": sorted(set(self.project_roots)), "candidates": items,
                 "candidate_allocated_bytes": sum(x.get("allocated_bytes") or 0 for x in items),
+                "cleanup_summary": summarize(items),
                 "actionable_allocated_bytes": sum(x.get("allocated_bytes") or 0 for x in items if x["action"] == "trash"),
                 "notes": ["allocated sizes are estimates, not guaranteed reclaimable bytes", "no process or reference match does not prove future non-use",
                           "known candidate discovery is not a complete disk usage inventory"]}
+        if self.native_preview:
+            preview = getattr(self.probe, "native_previews", None)
+            result["native_cleanup_previews"] = preview() if preview else [{"status": "unavailable", "reason": "native_preview_probe_unavailable"}]
         if audit_agents:
             result["agent_audit"] = self.agent_policy.audit(deadline=min(self.deadline, time.monotonic() + 20), probe=self.probe)
         result["scan_duration_seconds"] = round(time.monotonic() - self.started, 3)

@@ -3,6 +3,7 @@ import shlex
 import sys
 from collections import Counter
 from pathlib import Path
+from .cleanup_summary import summarize
 
 
 def safe(value):
@@ -14,10 +15,10 @@ def safe(value):
 def size(value):
     if value is None:
         return "未知"
-    for unit in ["B", "KiB", "MiB", "GiB", "TiB"]:
-        if abs(value) < 1024 or unit == "TiB":
+    for unit in ["B", "KB", "MB", "GB", "TB"]:
+        if abs(value) < 1000 or unit == "TB":
             return f"{value:.1f} {unit}"
-        value /= 1024
+        value /= 1000
 
 
 def command(*args):
@@ -39,6 +40,13 @@ def reasons(item):
         values.append("应用专属卸载残留，包含设置、历史及私有数据库")
     if "uninstall_not_confirmed" in notes:
         values.append("未获得已卸载的确认，暂不移除应用数据")
+    if "verified_obsolete_program_package" in notes:
+        values.append("已核对更新的注册版本；只涉及过期程序包，不包含已知用户状态")
+    if "application_owner_unknown" in notes:
+        values.append("发现疑似应用缓存，但归属未确认，暂不清理")
+    if item.get("size_observation"):
+        observed = item["size_observation"]
+        values.append("仅测量可读取的元数据；容量已知不代表可删除" + ("，大小为下界" if observed.get("lower_bound") else ""))
     if "project_dependency_environment_preserved" in notes:
         values.append("项目依赖/虚拟环境，保留开发环境")
     if "git_tracked_or_index_unavailable" in notes:
@@ -125,10 +133,32 @@ def render(kind, result, *, report_path=None):
         disk = result.get("disk_usage", {})
         lines = ["Tidvo 磁盘清理检查", f"扫描状态：{state}",
                  f"磁盘总容量：{size(disk.get('total_bytes'))}；已用：{size(disk.get('used_bytes'))}；可用：{size(disk.get('free_bytes'))}",
-                 f"候选总占用：{size(result['candidate_allocated_bytes'])}；待选择项目占用：{size(result['actionable_allocated_bytes'])}",
+                 f"已识别候选的已测量占用：{size(result['candidate_allocated_bytes'])}（包含保留项，不是释放量）",
                  "检查范围：已知缓存和开发产物；候选清单不代表全盘占用分布。",
                  "项目依赖 node_modules、.venv、venv 默认保留。", ""]
-        lines += candidates(result["candidates"])
+        summary = result.get("cleanup_summary") or summarize(result["candidates"])
+        for group in summary["buckets"]:
+            prefix = "至少 " if group["lower_bound_count"] or group["unknown_size_count"] else ""
+            unknown = f"；另有 {group['unknown_size_count']} 项大小未知" if group["unknown_size_count"] else ""
+            lines.append(f"{group['label']}：{group['count']} 项，{prefix}{size(group['measured_allocated_bytes'])}{unknown}")
+            if group["count"]:
+                owners = sorted(group["owners"].items(), key=lambda p: p[1]["measured_allocated_bytes"], reverse=True)[:4]
+                lines.append("    " + safe("；".join(f"{owner} {size(value['measured_allocated_bytes'])}" for owner, value in owners)))
+                lines.append("    下一步：" + group["next_action"])
+        lines += ["分类互斥，已按候选路径去重；未检查范围和未知大小不计为零空间。", ""]
+        items = result["candidates"]
+        if len(items) > 20:
+            examples = []
+            for group in summary["buckets"]:
+                examples += sorted([c for c in items if c.get("disposition") == group["id"]],
+                                   key=lambda c: c.get("allocated_bytes") or 0, reverse=True)[:2]
+            lines.append(f"以下显示 {len(examples)} 项代表候选；完整 {len(items)} 项保留在 JSON 报告中，无需逐项复制 ID。")
+            lines += candidates(examples)
+        else:
+            lines += candidates(items)
+        for preview in result.get("native_cleanup_previews", []):
+            lines.append(f"原生工具预览：{safe(preview.get('tool', '工具'))} — {safe(preview.get('reported_estimate') or preview.get('reason') or preview.get('status'))}")
+            lines.append("    只读建议，不计入候选容量，也不会随 apply 自动执行。")
         residuals = result.get("uninstalled_residual_inventory", [])
         if residuals:
             lines += ["", "可能的卸载残留（与缓存候选可能重叠，容量不可相加；尚未执行）："]
@@ -142,7 +172,7 @@ def render(kind, result, *, report_path=None):
             audit = result["agent_audit"]
             lines.append(f"Agent 体检：发现 {len(audit['detected_tools'])} 类本地数据/应用；状态 {audit['scan_status']}。体检数据仅报告，详见 JSON 中的 agent_audit。")
         if report_path:
-            lines += [f"完整 JSON 报告已保存：{safe(report_path)}", "下一步：选择上面的候选 ID，生成待确认计划：",
+            lines += [f"完整 JSON 报告已保存：{safe(report_path)}", "下一步：对话中可直接说“清理建议的缓存”；由 Agent 选择并核对整批范围。手动终端操作可用：",
                       command("plan", "--scan", report_path, "--ids", "候选ID")]
         else:
             lines.append("要生成清理计划，请先加 --output scan.json 重新扫描并保存报告。")

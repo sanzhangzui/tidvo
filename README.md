@@ -35,6 +35,11 @@ To inspect first, say:
 Current discovery focuses on known application/download caches and development
 artifacts. Reports explain the actual coverage.
 
+Reports separately total ready caches, items to recheck after quitting apps,
+separate-review items, protected data and incomplete evidence. Known cache rules
+include Maps, Homebrew, Cargo, Ruby and PyInstaller. Qualified retired Agent
+extension program packages can be reviewed separately; sessions/memory stay protected.
+
 ## Built for Agent workflows
 
 - **Protect working data:** sessions, memory, databases, shared Skills, plugins,

@@ -101,7 +101,7 @@ unproven browser runtime versions are report-only. They are not trashable throug
 Project `node_modules`, `.venv` and `venv` are always report-only: they are needed
 for development even if a process is not using them at scan time. A rebuild
 manifest does not change that policy. Download caches are separate candidates.
-There is no dependency-removal override in this interface. Policy version 0.2.3
+There is no dependency-removal override in this interface. Policy version 0.2.4
 rejects earlier-version plans; rescan and review a fresh plan.
 
 Since 0.2.3, `scan` reports application installation separately from process
@@ -147,7 +147,9 @@ Protection covers registered defaults and environment overrides, discovered
 project resources, extension identities, shared-link sources and selected declared
 local resource paths. It is checked during discovery and planning and refreshed
 for recorded projects before mutation, including after occupancy probes. Known
-Agent extension packages are retained even when marked obsolete. User `agent_roots`
+Agent extension packages stay protected unless an exact obsolete program package
+has positive newer-registration evidence, no known persistent state, and passes
+the separately reviewed rule in cleanup-coverage.md. User `agent_roots`
 may only add protection, not enable deletion or executable plugins. Invalid/broad
 explicit roots fail closed. Unsupported or malformed native configuration is
 reported as incomplete; it does not establish a complete reference graph.
@@ -155,6 +157,27 @@ reported as incomplete; it does not establish a complete reference graph.
 See [agent-adapters.md](agent-adapters.md) for exact scope, evidence and limits.
 
 ## Safety and lifecycle
+
+Since 0.2.4, `cleanup_summary` partitions known candidates into `ready_caches`,
+`quit_app`, `separate_review`, `protected` and `unverified`. Each bucket reports
+measured bytes, unknown-size and lower-bound counts, owners and a next action.
+Buckets are exclusive; totals include retained data and are not savings. Human
+output uses decimal KB/MB/GB and shows representative candidates for long lists;
+the complete JSON stays available. A readable metadata-only usage observation
+can report foreign-owned/incomplete capacity without making it eligible for plans.
+
+New exact user-cache families include map tiles, Apple Media/Python/parsecd,
+media-analysis temporary files, Xcode Interface Builder, Android SDK metadata,
+Homebrew downloads/API, Cargo crate downloads, Ruby specs/Bundler indexes and
+PyInstaller binary caches. Installed environments, models, SDK/AVD, Cargo sources,
+archives, unfinished downloads and locks stay separate/protected. Unknown app
+cache names are inventory-only until ownership is resolved. See
+[cleanup coverage](cleanup-coverage.md) for paths and limits.
+
+`scan --native-preview` requests `brew cleanup --dry-run` from a trusted installed
+Homebrew location. It disables automatic updates/analytics and reports owner
+estimates separately as `native_cleanup_previews`. It never executes native
+cleanup, creates a native-mutation plan, or adds those estimates to Trash totals.
 
 The JSON scan is not execution authority. Planning recomputes rules/evidence and
 rejects stale or fabricated candidates. Plans/receipts are signed with a local

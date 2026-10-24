@@ -33,7 +33,7 @@ class FixtureProbe(NativeProbe):
         return []
 
     def installation(self, owner, *, refresh=False):
-        return {"status": "unknown", "reason": "fixture_has_no_install_inventory"}
+        return {"status": "not_found", "reason": "isolated_fixture_has_no_installed_apps"}
 
     def idle(self, path, *, rule_id=None):
         return "idle"

@@ -21,6 +21,12 @@ Volume used space and known candidate sizes are different measurements. If the
 known candidates explain only a small part of used capacity, say which scope is
 unexamined rather than presenting the candidate list as a complete disk analysis.
 
+Use all five `cleanup_summary` buckets, including deferred capacity of running
+apps. Explain whether a large item was discovered but retained, could not be
+measured, or lacks a cleanup rule. Native Homebrew estimates and Agent inventory
+capacity remain separate; do not inflate the cleanup total with either. Read
+cleanup-coverage.md for the new exact cache and retired program rules.
+
 ## Understand the current work
 
 Start with facts already in the conversation: projects being developed, upcoming

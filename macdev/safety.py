@@ -98,6 +98,48 @@ def unchanged(path, snapshot):
     return current
 
 
+def observe_usage(path, *, limit=50000, deadline=None):
+    """Metadata-only measurement, independent of permission to move the tree.
+
+    Foreign-owned readable metadata may contribute size; it never authorizes
+    mutation. Do not follow symlinks or nested mounts, or read file bodies.
+    """
+    root = Path(path)
+    deadline = deadline or time.monotonic() + 3
+    stack, seen, count, total, foreign, gaps = [root], set(), 0, 0, 0, set()
+    try:
+        if root.resolve() != root:
+            raise Refused("redirected_measurement_root")
+        device = root.lstat().st_dev
+    except (OSError, Refused):
+        return {"status": "unavailable", "allocated_bytes": None, "lower_bound": False, "issues": ["measurement_root_unavailable"]}
+    while stack:
+        if count >= limit or time.monotonic() > deadline:
+            gaps.add("measurement_budget_exceeded")
+            break
+        p = stack.pop()
+        try:
+            s = p.lstat()
+            count += 1
+            if s.st_dev != device:
+                gaps.add("nested_mount_not_measured")
+                continue
+            key = s.st_dev, s.st_ino
+            if key not in seen:
+                total += getattr(s, "st_blocks", 0) * 512
+                foreign += s.st_uid != os.getuid()
+                seen.add(key)
+            if stat.S_ISDIR(s.st_mode):
+                with os.scandir(p) as entries:
+                    stack.extend(Path(e.path) for e in entries)
+        except OSError:
+            gaps.add("metadata_unreadable")
+    known = total if count and (total or not gaps) else None
+    return {"status": "partial" if gaps else "complete", "allocated_bytes": known,
+            "lower_bound": bool(gaps) and known is not None, "foreign_owned_entries": foreign,
+            "metadata_entries": count, "issues": sorted(gaps)}
+
+
 def deduplicate(items):
     ordered = sorted(items, key=lambda x: (len(Path(x["path"]).parts), x["path"], x["rule_id"]))
     selected = []
