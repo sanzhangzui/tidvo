@@ -49,6 +49,10 @@ or more reclaimed GB across real users.
   homes and correctly triggering the production protection guard. Fixture
   isolation was fixed; production still refuses overrides outside scoped Home.
   The full local suite also passes with deliberately injected host overrides.
+- The one-message installation guide was checked against the published beta.1
+  assets in a temporary Home: checksum, safe extraction, a shared Skills symlink,
+  version/catalog entry points, existing-install refusal and absence of cleanup
+  state all passed. Documentation changes do not replace published beta assets.
 - Unchanged pinned backend: the prior required core regression passed 289 cases for
   `file_ops_mole_delete`, `file_ops_size`, `file_ops_safe_remove_symlink`,
   `user_file_ops`, `core_safe_functions`, and `history`.

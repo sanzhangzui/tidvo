@@ -15,7 +15,7 @@ def build(output=None):
     output = Path(output or ROOT / "dist")
     output.mkdir(parents=True, exist_ok=True)
     archive = output / ("tidvo-" + __version__ + ".tar.gz")
-    allowed = ["SKILL.md", "README.md", "README.zh-CN.md", "UPSTREAM.md", "LICENSE", "macdev", "scripts", "references", "agents", "tests", "vendor/mole"]
+    allowed = ["SKILL.md", "README.md", "README.zh-CN.md", "INSTALL.md", "UPSTREAM.md", "LICENSE", "macdev", "scripts", "references", "agents", "tests", "vendor/mole"]
     members = set()
     for relative in allowed:
         p = ROOT / relative
