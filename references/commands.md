@@ -101,7 +101,7 @@ unproven browser runtime versions are report-only. They are not trashable throug
 Project `node_modules`, `.venv` and `venv` are always report-only: they are needed
 for development even if a process is not using them at scan time. A rebuild
 manifest does not change that policy. Download caches are separate candidates.
-There is no dependency-removal override in this interface. Policy version 0.2.1
+There is no dependency-removal override in this interface. Policy version 0.2.2
 rejects earlier-version plans; rescan and review a fresh plan.
 
 ## Agent inventory and protection (0.2.0)
@@ -153,6 +153,16 @@ The key protects against accidental document edits, not a hostile same-UID user.
 Plans are single-attempt; make a fresh plan to revisit skips. One operation runs
 at a time. Mutation requires macOS 14+, a non-root process, complete activity and
 file-occupancy evidence, and stable filesystem identities and metadata.
+
+Since 0.2.2, macOS may use a narrowly scoped current-user occupancy check for
+reviewed, regenerable user caches when PID 1 is not visible. A private open-file
+canary must be observable, and the current-user process census must be covered
+by lsof records with file descriptors. Target occupancy is then checked without
+a UID filter so any visible holder blocks the move. Warnings, missing processes,
+timeouts and malformed output remain unknown. The receipt records the observation
+scope; it does not certify other users' processes or future activity. Other rules
+retain the original root-visibility requirement. See
+[occupancy evidence](occupancy-checks.md) for details and limits.
 
 Only same-volume Trash moves are supported. The existing Trash must be private
 or an absent Trash is created as 0700. A redirected, inaccessible or unsafe Trash

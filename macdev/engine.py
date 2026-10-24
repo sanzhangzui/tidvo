@@ -212,7 +212,10 @@ def apply(plan_id, state, *, confirmed=False, probe=None, backend=None):
                             raise Refused("active_or_referenced_or_unknown")
                         if candidate.get("packages") and ev["reference_scan_status"] != "complete":
                             raise Refused("reference_evidence_incomplete")
-                        if probe.idle(p) != "idle":
+                        occupancy = probe.idle(p, rule_id=candidate["rule_id"])
+                        if getattr(probe, "last_occupancy_evidence", None):
+                            entry["occupancy"] = dict(probe.last_occupancy_evidence)
+                        if occupancy != "idle":
                             raise Refused("open_file_check_active_or_incomplete")
                         unchanged(p, candidate["snapshot"])
                         if p.lstat().st_dev != trash.stat().st_dev:
@@ -282,7 +285,10 @@ def restore(run_id, state, *, confirmed=False, backend=None, probe=None):
                 current = tree_snapshot(src)
                 if current["identity"] != entry["snapshot"]["identity"] or current["fingerprint"] != entry["snapshot"]["fingerprint"]:
                     raise Refused("trash_payload_missing_or_changed")
-                if probe.idle(src) != "idle":
+                occupancy = probe.idle(src, rule_id=entry["rule_id"])
+                if getattr(probe, "last_occupancy_evidence", None):
+                    record["occupancy"] = dict(probe.last_occupancy_evidence)
+                if occupancy != "idle":
                     raise Refused("restore_payload_in_use_or_unknown")
                 entry["restore_status"] = "restoring"
                 state.write("runs", run)

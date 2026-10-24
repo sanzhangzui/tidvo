@@ -32,7 +32,7 @@ class IdleFixtureProbe(NativeProbe):
         self.rows = []
         self._references()
     def owner_cache_paths(self): return []
-    def idle(self, path): return "idle"
+    def idle(self, path, *, rule_id=None): return "idle"
 
 
 def benchmark():

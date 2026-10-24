@@ -37,7 +37,7 @@ class FakeProbe:
         return {"activity": "active" if self.active else "idle", "configured_reference": self.referenced,
                 "reference_scan_status": self.reference_status, "matched_pids": []}
 
-    def idle(self, path):
+    def idle(self, path, *, rule_id=None):
         return self.open_state
 
 
@@ -536,7 +536,7 @@ _mole_complete_lsof_mode || probe_status=$?
                 inner.reference_status = "complete"
                 inner._references()
             def owner_cache_paths(inner): return []
-            def idle(inner, path): return "idle"
+            def idle(inner, path, *, rule_id=None): return "idle"
         folder = self.home / ".npm/_npx/reference-fixture"
         self.write(folder / "package.json", {"dependencies": {"fixture-mcp": "1.0"}})
         probe = ConfigProbe(self.home)

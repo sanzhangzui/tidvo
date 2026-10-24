@@ -32,7 +32,7 @@ class FixtureProbe(NativeProbe):
     def owner_cache_paths(self):
         return []
 
-    def idle(self, path):
+    def idle(self, path, *, rule_id=None):
         return "idle"
 
 

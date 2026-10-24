@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .agent_catalog import config_sources
 from .agent_inspection import read_config
+from .occupancy import check_occupancy
 
 
 def command(args, timeout=10):
@@ -26,6 +27,7 @@ class NativeProbe:
         self.references = set()
         self.reference_status = "complete"
         self.config_paths = set()
+        self.last_occupancy_evidence = {}
         self.refresh()
 
     def refresh(self):
@@ -98,19 +100,9 @@ class NativeProbe:
                 "reference_scan_status": self.reference_status,
                 "reference_note": "known configuration adapters only; no match does not prove future non-use"}
 
-    def idle(self, path):
-        # A blank unprivileged lsof can silently omit root-owned processes.
-        visibility = command(["/usr/sbin/lsof", "-Fpu", "-p", "1"], 5)
-        if visibility is None or visibility.returncode != 0 or visibility.stderr.strip() or "u0" not in visibility.stdout.splitlines():
-            return "unknown"
-        args = ["/usr/sbin/lsof", "-nP", "-Fpn"]
-        args += ["+D", str(path)] if Path(path).is_dir() else [str(path)]
-        r = command(args, 15)
-        if r is None or r.stderr.strip():
-            return "unknown"
-        if r.stdout.strip() or r.returncode == 0:
-            return "active"
-        return "idle" if r.returncode == 1 else "unknown"
+    def idle(self, path, *, rule_id=None):
+        self.last_occupancy_evidence = check_occupancy(path, self.home, command, rule_id)
+        return self.last_occupancy_evidence["status"]
 
 
 def git_evidence(path):

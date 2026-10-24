@@ -1,6 +1,6 @@
-# Tidvo validation evidence — 0.2.1 beta
+# Tidvo validation evidence — 0.2.2 beta
 
-Local evidence recorded on 2026-10-23. Publication and GitHub CI results are
+Local evidence recorded on 2026-10-24. Publication and GitHub CI results are
 separate from these local checks. This is not a claim of fewer false positives
 or more reclaimed GB across real users.
 
@@ -8,7 +8,11 @@ or more reclaimed GB across real users.
 
 - Local host: macOS 26.4.1, Apple Silicon arm64.
 - Product suite: `python3 -m unittest discover -s tests -v`; Python 3.14.2 and
-  Python 3.11.12: **146 tests passed on each interpreter**. Fixtures cover scan/plan/apply/restore, Git changes, configured
+  Python 3.11.12: **163 tests passed on each interpreter**, with one native
+  process-visibility integration test skipped inside the sandbox. The separate
+  17-test occupancy suite passed outside the sandbox without skips, including
+  a held-open fixture refusal and actual pinned-backend Trash/restore roundtrip.
+  Fixtures cover scan/plan/apply/restore, Git changes, configured
   references, update locks, invalid plans, partial evidence, path replacement,
   interrupted moves, Trash failure, restore conflicts and packaging. A reference
   probe becoming incomplete after plan creation also prevents the npx move;
@@ -36,9 +40,10 @@ or more reclaimed GB across real users.
   changes after planning, including another project's new reference or a change
   during occupancy checks. Explicit roots/shared resources override the narrow
   worktree-cache exception. The pre-existing 100 tests still pass.
-- Bash syntax and skill frontmatter validation pass. The self-contained 0.2.1
+- Bash syntax and skill frontmatter validation pass. The self-contained 0.2.2
   archive includes the catalog, protection code, Agent tests and coverage guide;
-  the extracted package also passes the full 146-test suite. No personal scan
+  the extracted package also passes the full 163-test suite (the same sandbox
+  visibility skip applies). No personal scan
   report, user configuration or upstream skill entry point is packaged.
 - The Tidvo rename adds a fixture verifying that both the new and legacy Python
   entry points read the same existing signed history without migrating state.
@@ -105,9 +110,11 @@ real preview artifacts to inspect additional scenarios without executing cleanup
 - macOS 14/15 have CI evidence for the release noted above; local validation is
   on macOS 26.4.1 Apple Silicon. Intel has not been separately validated.
   Hosted fixture results are not installed-version certification for Agent tools.
-- Complete root-process visibility can be unavailable without broader macOS
-  access. The product retains those candidates; it never invokes sudo to work
-  around uncertainty.
+- Root-process visibility can be unavailable without broader macOS access.
+  Version 0.2.2 permits only the fixed regenerable-cache rule set to use calibrated
+  current-user evidence; other rules and incomplete observations remain retained.
+  This does not certify other users' processes. See occupancy-checks.md. The
+  product never invokes sudo to work around uncertainty.
 - Known configuration adapters are not a complete reference graph; unknown
   applications and uncertain browser runtimes remain report-only.
 - The 38-entry Agent catalog is detection/protection coverage, not certification

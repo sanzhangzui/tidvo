@@ -174,7 +174,7 @@ class AgentInventoryTests(unittest.TestCase):
     def test_protection_added_during_occupancy_probe_blocks_final_move(self):
         folder = self.cache()
         state, plan = self.plan(folder)
-        def idle(path):
+        def idle(path, *, rule_id=None):
             self.config({"agent_roots": {"new_agent": [str(folder)]}})
             return "idle"
         with patch.object(self.probe, "idle", side_effect=idle):
