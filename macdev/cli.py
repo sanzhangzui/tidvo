@@ -15,7 +15,7 @@ from .state import State
 
 
 def parser():
-    p = argparse.ArgumentParser(description="Tidvo: cleanup tailored for AI Agent workflows. macOS beta; Windows planned. Trash only, never sudo or permanent delete.")
+    p = argparse.ArgumentParser(description="Tidvo: disk cleanup with extra protection for AI Agent and development data. macOS beta; Windows planned. Trash only, never sudo or permanent delete.")
     p.add_argument("--version", action="version", version=__version__)
     commands = p.add_subparsers(dest="command", required=True)
     s = commands.add_parser("scan", help="Read-only discovery; does not create product state")

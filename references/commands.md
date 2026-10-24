@@ -55,6 +55,12 @@ CLI roots replace configured roots; CLI exclusions add to configured exclusions.
 Settings are not written by the product. Configuration changes are rechecked
 before moving candidates. Bad or unreadable configuration stops mutation.
 
+Since 0.2.1, ordinary scans include `disk_usage` for the filesystem containing
+Home: `total_bytes`, `used_bytes`, `free_bytes`, scope/path and measurement status.
+Unavailable capacity is null and reported as a gap. These filesystem statistics
+are separate from candidate capacity: discovery covers known cache/development
+paths and is not a complete inventory of all disk usage.
+
 Supported project metadata includes package.json, pyproject.toml, requirements.txt,
 Cargo.toml, go.mod, Maven/Gradle, Package.swift and Git/worktrees. Candidate types
 include dependency folders and virtual environments for reporting, bytecode/tool
@@ -95,7 +101,7 @@ unproven browser runtime versions are report-only. They are not trashable throug
 Project `node_modules`, `.venv` and `venv` are always report-only: they are needed
 for development even if a process is not using them at scan time. A rebuild
 manifest does not change that policy. Download caches are separate candidates.
-There is no dependency-removal override in this interface. Policy version 0.2.0
+There is no dependency-removal override in this interface. Policy version 0.2.1
 rejects earlier-version plans; rescan and review a fresh plan.
 
 ## Agent inventory and protection (0.2.0)

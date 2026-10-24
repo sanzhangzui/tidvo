@@ -5,6 +5,22 @@ and when reporting an operation's result. The agent makes these decisions from
 evidence; the scanner does not implement a complete usage/reference graph or
 Mole's seven-day default-selection heuristic. Do not claim otherwise.
 
+## Make ordinary requests sufficient
+
+Disk cleanup is the primary workflow. Agent-specific evidence improves protection
+and recommendations; users do not need an Agent-focused prompt to get it.
+For “帮我清理一下”, start a normal scan, choose a conservative ordinary-cache
+batch and show its exact plan for one confirmation. For “看看哪里占空间”, scan
+and explain only. The skill entry point defines routing and default retention.
+Do not ask users to repeat retention rules, pick IDs or specify technical groups.
+
+The first report should answer: how much disk space is used/available, what this
+scan found, what is worth cleaning, what will be retained, and the next action.
+Keep optional Agent inventories behind that disk-cleanup decision unless asked.
+Volume used space and known candidate sizes are different measurements. If the
+known candidates explain only a small part of used capacity, say which scope is
+unexamined rather than presenting the candidate list as a complete disk analysis.
+
 ## Understand the current work
 
 Start with facts already in the conversation: projects being developed, upcoming

@@ -1,3 +1,3 @@
-"""Tidvo: recoverable cleanup tailored for AI Agent workflows. GPL-3.0-only."""
+"""Tidvo: conversational disk cleanup with Agent data protection. GPL-3.0-only."""
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"

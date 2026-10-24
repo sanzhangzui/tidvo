@@ -1,9 +1,13 @@
 ---
 name: tidvo
-description: Cleanup tailored for AI Agent workflows, including Codex, Claude Code, OpenClaw and Pi. Inspect Agent storage, protect sessions, memory, shared Skills, MCP tools and development dependencies, and move approved caches to Trash with restore records. Use for Mac cleanup, Agent storage inspection and cleanup history. macOS beta; Windows planned.
+description: Conversational disk cleanup with extra protection for AI Agent and development data. Use for low disk space, finding cleanup candidates, clearing caches, cleanup history, and requests such as 帮我清理一下 or 看看哪里占空间. Inspect disk usage, recommend a batch, and move approved items to Trash with restore records. Also supports Agent storage inspection. macOS beta; Windows planned.
 ---
 
 # Tidvo
+
+Tidvo's main purpose is disk cleanup. Agent and development adaptations make
+cleanup recommendations safer; users do not need to know those rules or repeat
+them in their requests.
 
 Use this skill's bundled `scripts/tidvo.py`, resolved relative to this file.
 Requires Python 3.11+; actual changes require macOS 14+ and a normal user account.
@@ -16,7 +20,35 @@ For context-aware recommendations and the result/next-step report, read
 For Agent inventory, coverage evidence, custom roots and protection limits, read
 [the Agent adapter guide](references/agent-adapters.md).
 
-## Agent read-only check
+## Start from a simple request
+
+Treat ordinary language as a complete request to start work. Do not ask the user
+to restate a technical prompt, choose a scan mode, list file types or copy IDs.
+Use configured/default scope unless the conversation supplies a narrower one.
+
+| User intent or example | Default behavior |
+| --- | --- |
+| “看看哪里占空间”, “磁盘快满了”, or an analysis request | Run `scan`, summarize disk capacity and the largest relevant candidate groups, and explain coverage gaps. No plan or cleanup is authorized by inspection alone. |
+| “帮我清理一下”, “清理磁盘”, or a general cleanup request | Run `scan`, recommend a conservative batch of verified ordinary caches, generate its plan internally, and show the exact scope/impact for one confirmation. |
+| “就按建议清理”, after reviewing a concrete plan | Apply that same reviewed plan when already authorized. Do not ask the user to repeat their consent or select IDs. |
+| A request specifically about Agent data | Use the Agent-only check below. Generic disk-cleanup requests use `scan`, which already includes Agent protection and an auxiliary audit. |
+| A request to undo a cleanup | Find the relevant receipt and follow the restore workflow. |
+
+Always retain personal files, source, databases, Agent sessions/memory, shared
+Skills/MCP resources and project dependencies without requiring the user to say
+“保留依赖” or “先不清理”. Broad cleanup language starts scan-and-review, not an
+unreviewed move. Default cache recommendations exclude ambiguous build/delivery
+outputs, installed tools, rollback versions and offline-resource stores; review
+those separately when needed. Act only within backend eligibility and scope.
+
+Lead the result with disk used/free capacity, the most useful recommended batch,
+its impact and meaningful retained groups. Agent details support that decision;
+they are not the main report unless requested. Disk capacity describes the
+filesystem containing Home. Candidate discovery covers known caches/development
+artifacts, not every file on disk; a small candidate total does not explain all
+used space. State material gaps plainly, without promising a full-volume scan.
+
+## Agent-only check
 
 For an Agent-only request, run `agents --json --output NEW_REPORT.json`, adding
 the user's project roots/exclusions when provided. Use `agents --catalog --json`

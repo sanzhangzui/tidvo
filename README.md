@@ -1,12 +1,12 @@
 # Tidvo
 
-**Cleanup tailored for AI Agent workflows.**
+**Conversational disk cleanup, optimized for AI Agent and development environments.**
 
 [中文说明](README.zh-CN.md)
 
-Inspect storage and review cleanup through conversation, with protections for
-Agent sessions, memory, shared Skills, MCP tools and development dependencies.
-Tailored for Codex, Claude Code, OpenClaw, Pi and related tools.
+Check disk usage, find worthwhile cache cleanup, and clean an approved batch with
+recovery records. Extra protection for Codex, Claude Code, OpenClaw, Pi and related
+tools preserves sessions, memory, shared Skills, MCP resources and project dependencies.
 
 ## Install with one message
 
@@ -20,16 +20,20 @@ Current platform: **macOS 14+ and Python 3.11+**. Windows support is planned.
 
 ## Start using it
 
-Check storage first:
+Just say:
 
-> Use Tidvo to inspect my Agent and development storage. Keep sessions, memory and project dependencies. Explain the largest items and recommend what to do next. Do not clean anything yet.
+> Help me clean up my computer.
 
-Then request a cleanup recommendation:
+Tidvo checks storage, recommends a batch, explains the impact and waits for your
+confirmation before acting. Data protection, retained development dependencies
+and a useful result summary are defaults.
 
-> Use Tidvo to recommend application and download caches to clean. Keep my development dependencies and Agent data, explain the impact, and show one batch for me to confirm.
+To inspect first, say:
 
-Tidvo handles candidate IDs internally. It summarizes every operation and
-recommends the next step.
+> What's taking up space?
+
+Current discovery focuses on known application/download caches and development
+artifacts. Reports explain the actual coverage.
 
 ## Built for Agent workflows
 

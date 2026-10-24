@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from macdev.engine import InterruptedMove, MoleBackend, apply, make_plan, prepare_trash, rename_exclusive, restore
@@ -89,6 +90,26 @@ class ProductTests(unittest.TestCase):
         self.assertEqual(report["scan_status"], "complete")
         self.assertEqual(report["candidates"][0]["rule_id"], "project.next")
         self.assertEqual(before, tree_snapshot(self.home))
+        self.assertFalse((self.home / ".local").exists())
+
+    def test_scan_reports_volume_capacity_separately_from_cleanup_candidates(self):
+        before = tree_snapshot(self.home)
+        with patch("macdev.scanner.shutil.disk_usage", return_value=SimpleNamespace(total=1000000, used=800000, free=200000)) as measure:
+            report = self.scan()
+        measure.assert_called_once_with(self.home)
+        self.assertEqual(report["disk_usage"], {"path": str(self.home), "scope": "filesystem_containing_home",
+                                             "status": "available", "total_bytes": 1000000, "used_bytes": 800000, "free_bytes": 200000})
+        self.assertNotEqual(report["candidate_allocated_bytes"], report["disk_usage"]["used_bytes"])
+        self.assertEqual(before, tree_snapshot(self.home))
+
+    def test_volume_capacity_failure_is_unknown_while_candidates_remain_reported(self):
+        with patch("macdev.scanner.shutil.disk_usage", side_effect=PermissionError("fixture")):
+            report = self.scan()
+        self.assertEqual(report["disk_usage"]["status"], "unavailable")
+        self.assertIsNone(report["disk_usage"]["free_bytes"])
+        self.assertEqual(report["scan_status"], "partial")
+        self.assertTrue(any(x["reason"] == "disk_capacity_unavailable" for x in report["issues"]))
+        self.assertTrue(report["candidates"])
         self.assertFalse((self.home / ".local").exists())
 
     def test_excluded_path_not_candidate(self):

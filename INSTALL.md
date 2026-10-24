@@ -27,12 +27,18 @@ and command access cannot complete local installation.
 
 ## Download the standalone release
 
-Current beta: **v0.2.0-beta.1**. Download both assets into a fresh temporary folder:
+Read the published releases from:
 
-- https://github.com/sanzhangzui/tidvo/releases/download/v0.2.0-beta.1/tidvo-0.2.0.tar.gz
-- https://github.com/sanzhangzui/tidvo/releases/download/v0.2.0-beta.1/tidvo-0.2.0.tar.gz.sha256
+https://api.github.com/repos/sanzhangzui/tidvo/releases
 
-Release information: https://github.com/sanzhangzui/tidvo/releases/tag/v0.2.0-beta.1
+Choose the newest published, non-draft release with a `tidvo-<version>.tar.gz`
+asset and its matching `.sha256` asset. Prereleases are eligible: Tidvo is
+currently in beta. Use the assets' `browser_download_url` values and download
+both files into a fresh temporary folder. Record the selected tag and version.
+If the API is unavailable, use https://github.com/sanzhangzui/tidvo/releases.
+Do not assume `/releases/latest` includes prereleases or pin future installs to
+an older beta. If the available published package is older than requested, report
+that instead of silently substituting source or an unpublished build.
 
 Compute the archive's SHA-256 locally and compare it with the checksum file.
 Use a safe archive extractor in the temporary folder. Before installing, confirm
@@ -62,7 +68,10 @@ an installation check. Do not modify the user's cleanup configuration.
 
 Finish with the installed location, the validation result and this starting prompt:
 
-> 用 Tidvo 只读体检我的 Agent 和开发环境，保留会话、记忆及项目依赖，解释占用最大的内容，并推荐下一步，先不清理。
+> 帮我清理一下电脑。
+
+The installed skill handles checking, data protection and review before any move.
+Users who only want an inspection can say “看看哪里占空间”.
 
 If the host has not refreshed its Skills list, explain its normal refresh or
 new-conversation step. Distinguish successfully copied files from an installation

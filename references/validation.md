@@ -1,4 +1,4 @@
-# Tidvo validation evidence — 0.2.0 beta
+# Tidvo validation evidence — 0.2.1 beta
 
 Local evidence recorded on 2026-10-23. Publication and GitHub CI results are
 separate from these local checks. This is not a claim of fewer false positives
@@ -8,7 +8,7 @@ or more reclaimed GB across real users.
 
 - Local host: macOS 26.4.1, Apple Silicon arm64.
 - Product suite: `python3 -m unittest discover -s tests -v`; Python 3.14.2 and
-  Python 3.11.12: **143 tests passed on each interpreter**. Fixtures cover scan/plan/apply/restore, Git changes, configured
+  Python 3.11.12: **146 tests passed on each interpreter**. Fixtures cover scan/plan/apply/restore, Git changes, configured
   references, update locks, invalid plans, partial evidence, path replacement,
   interrupted moves, Trash failure, restore conflicts and packaging. A reference
   probe becoming incomplete after plan creation also prevents the npx move;
@@ -36,9 +36,9 @@ or more reclaimed GB across real users.
   changes after planning, including another project's new reference or a change
   during occupancy checks. Explicit roots/shared resources override the narrow
   worktree-cache exception. The pre-existing 100 tests still pass.
-- Bash syntax and skill frontmatter validation pass. The self-contained 0.2.0
+- Bash syntax and skill frontmatter validation pass. The self-contained 0.2.1
   archive includes the catalog, protection code, Agent tests and coverage guide;
-  the extracted package also passes the full 143-test suite. No personal scan
+  the extracted package also passes the full 146-test suite. No personal scan
   report, user configuration or upstream skill entry point is packaged.
 - The Tidvo rename adds a fixture verifying that both the new and legacy Python
   entry points read the same existing signed history without migrating state.
@@ -53,6 +53,16 @@ or more reclaimed GB across real users.
   assets in a temporary Home: checksum, safe extraction, a shared Skills symlink,
   version/catalog entry points, existing-install refusal and absence of cleanup
   state all passed. Documentation changes do not replace published beta assets.
+- Version 0.2.1 adds three checks for filesystem capacity reporting, unknown
+  capacity on failure, and human output explaining known candidate coverage.
+  Capacity inspection creates no cleanup state and is separate from candidate
+  estimates. Ordinary-language routing/default retention are skill instructions;
+  these deterministic tests do not certify every host/model's conversational
+  behavior. The short-request acceptance cases are documented in SKILL.md.
+- The published 0.2.0 code passed six GitHub matrix tasks for macOS 14/15 and
+  Ubuntu with Python 3.11/3.13, plus the upstream safety task:
+  https://github.com/sanzhangzui/tidvo/actions/runs/40070978975.
+  Current-release CI is reported separately in its release notes.
 - Unchanged pinned backend: the prior required core regression passed 289 cases for
   `file_ops_mole_delete`, `file_ops_size`, `file_ops_safe_remove_symlink`,
   `user_file_ops`, `core_safe_functions`, and `history`.
@@ -92,9 +102,9 @@ real preview artifacts to inspect additional scenarios without executing cleanup
 
 ## Release limits
 
-- macOS 14/15 and Intel have not been locally validated. CI is configured, not
-  executed merely because the workflow file exists. Keep the package beta until
-  results from those combinations are available.
+- macOS 14/15 have CI evidence for the release noted above; local validation is
+  on macOS 26.4.1 Apple Silicon. Intel has not been separately validated.
+  Hosted fixture results are not installed-version certification for Agent tools.
 - Complete root-process visibility can be unavailable without broader macOS
   access. The product retains those candidates; it never invokes sudo to work
   around uncertainty.

@@ -1,4 +1,4 @@
 interface:
   display_name: "Tidvo"
-  short_description: "针对 Agent 工作流定制清理，保护会话记忆、共享 Skills 与开发依赖"
-  default_prompt: "使用 $tidvo 只读体检我的 Agent 与开发环境占用，保留会话、记忆和依赖，按用途解释清理建议与影响，先不执行。"
+  short_description: "对话式磁盘清理，自动检查并推荐清单，专门保护 Agent 数据与开发依赖"
+  default_prompt: "用 $tidvo 帮我清理一下电脑。"

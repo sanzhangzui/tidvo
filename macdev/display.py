@@ -111,8 +111,11 @@ def render(kind, result, *, report_path=None):
         return "\n".join(lines)
     if kind == "scan":
         state = "完整" if result["scan_status"] == "complete" else "部分完成，请查看下方问题"
-        lines = [f"扫描状态：{state}",
+        disk = result.get("disk_usage", {})
+        lines = ["Tidvo 磁盘清理检查", f"扫描状态：{state}",
+                 f"磁盘总容量：{size(disk.get('total_bytes'))}；已用：{size(disk.get('used_bytes'))}；可用：{size(disk.get('free_bytes'))}",
                  f"候选总占用：{size(result['candidate_allocated_bytes'])}；待选择项目占用：{size(result['actionable_allocated_bytes'])}",
+                 "检查范围：已知缓存和开发产物；候选清单不代表全盘占用分布。",
                  "项目依赖 node_modules、.venv、venv 默认保留。", ""]
         lines += candidates(result["candidates"])
         for issue in result["issues"]:

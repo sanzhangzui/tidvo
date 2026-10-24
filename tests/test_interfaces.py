@@ -58,6 +58,13 @@ class InterfaceTests(unittest.TestCase):
         self.assertEqual(json.loads(r.stdout)["scan_status"], "partial")
         self.assertFalse((self.home / ".local").exists())
 
+    def test_human_scan_explains_disk_capacity_and_candidate_coverage(self):
+        r = self.cli("scan", "--root", str(self.home / "missing"))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        for label in ["磁盘总容量", "已用", "可用", "不代表全盘占用分布"]:
+            self.assertIn(label, r.stdout)
+        self.assertFalse((self.home / ".local").exists())
+
     def test_cli_rejects_bad_config_without_traceback(self):
         p = self.home / ".config/mac-dev-cleanup/config.json"
         p.parent.mkdir(parents=True)

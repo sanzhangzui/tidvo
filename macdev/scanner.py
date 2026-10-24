@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import time
 import tomllib
 from collections import deque
@@ -352,13 +353,22 @@ class Scanner:
                 if protection["reason"] not in item["evidence"]:
                     item["evidence"].append(protection["reason"])
         items = deduplicate(self.items)
+        capacity = {"path": str(self.home), "scope": "filesystem_containing_home", "status": "unavailable",
+                    "total_bytes": None, "used_bytes": None, "free_bytes": None}
+        try:
+            measured = shutil.disk_usage(self.home)
+            capacity.update(status="available", total_bytes=measured.total, used_bytes=measured.used, free_bytes=measured.free)
+        except OSError:
+            self.issues.append({"path": str(self.home), "reason": "disk_capacity_unavailable"})
         result = {"schema_version": 1, "home": str(self.home), "roots": [str(x) for x in self.roots],
                 "scan_duration_seconds": round(time.monotonic() - self.started, 3),
                 "excludes": [str(x) for x in self.excludes], "scan_status": "partial" if self.issues else "complete",
-                "issues": self.issues, "projects": sorted(set(self.project_roots)), "candidates": items,
+                "issues": self.issues, "disk_usage": capacity, "projects": sorted(set(self.project_roots)), "candidates": items,
                 "candidate_allocated_bytes": sum(x.get("allocated_bytes") or 0 for x in items),
                 "actionable_allocated_bytes": sum(x.get("allocated_bytes") or 0 for x in items if x["action"] == "trash"),
-                "notes": ["allocated sizes are estimates, not guaranteed reclaimable bytes", "no process or reference match does not prove future non-use"]}
+                "notes": ["allocated sizes are estimates, not guaranteed reclaimable bytes", "no process or reference match does not prove future non-use",
+                          "known candidate discovery is not a complete disk usage inventory"]}
         if audit_agents:
             result["agent_audit"] = self.agent_policy.audit(deadline=min(self.deadline, time.monotonic() + 20), probe=self.probe)
+        result["scan_duration_seconds"] = round(time.monotonic() - self.started, 3)
         return result
